@@ -234,14 +234,14 @@ function App() {
                 return;
             }
 
-            const token = await getToken();
             setIsModalOpen(false)
+            const token = await getToken();
             axios.post(`${API_BACKEND_URL}/api/v1/website`, {
                 url,
             }, {
-                headers: {
-                    Authorization: token,
-                },
+              headers: {
+                Authorization: token || "",
+              },
             })
             .then(() => {
                 refreshWebsites();

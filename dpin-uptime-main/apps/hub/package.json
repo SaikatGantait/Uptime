@@ -3,9 +3,7 @@
   "module": "index.ts",
   "type": "module",
   "devDependencies": {
-    "@types/bun": "latest",
-    "common": "*",
-    "db": "*"
+    "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -13,6 +11,14 @@
   "dependencies": {
     "@solana/kit": "^2.1.0",
     "@solana/web3.js": "^1.98.0",
-    "tweetnacl": "^1.0.3"
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1",
+    "common": "*",
+    "db": "*"
+  },
+  "scripts": {
+    "dev": "bun --watch index.ts",
+    "start": "bun index.ts",
+    "build": "echo 'bun runtime app - no build step'"
   }
 }

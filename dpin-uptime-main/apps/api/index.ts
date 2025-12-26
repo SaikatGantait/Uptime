@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import express from "express"
 import { authMiddleware } from "./middleware";
 import { prismaClient } from "db/client";
@@ -87,4 +88,7 @@ app.post("/api/v1/payout/:validatorId", async (req, res) => {
    
 })
 
-app.listen(8080);
+const port = parseInt(process.env.PORT || "5050", 10);
+app.listen(port, () => {
+    console.log(`API listening on http://localhost:${port}`);
+});

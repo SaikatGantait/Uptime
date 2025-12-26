@@ -3,7 +3,8 @@
   "module": "index.ts",
   "type": "module",
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "tsx": "^4.19.2"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -18,5 +19,10 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "jwt": "^0.2.0"
+  },
+  "scripts": {
+    "dev": "tsx watch index.ts",
+    "start": "tsx index.ts",
+    "build": "echo 'node runtime app via tsx - no build step'"
   }
 }

@@ -23,7 +23,7 @@ export function useWebsites() {
         const token = await getToken();
         const response = await axios.get(`${API_BACKEND_URL}/api/v1/websites`, {
             headers: {
-                Authorization: token,
+                Authorization: token || "",
             },
         });
 
