@@ -1,12 +1,11 @@
 "use client";
-
 import {
     SignInButton,
     SignUpButton,
     SignedIn,
     SignedOut,
     UserButton,
-  } from '@clerk/nextjs'
+} from '@clerk/nextjs'
 
 export function Appbar() {
     return  <div className="flex justify-between items-center p-4">

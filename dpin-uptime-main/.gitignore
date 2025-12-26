@@ -36,3 +36,84 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+###############################################
+# Monorepo .gitignore (root)
+# Covers Node/Bun/Next.js/Turbo/Prisma/VSCode
+# https://github.com/github/gitignore references
+###############################################
+
+# Dependencies / Package Managers
+node_modules/
+.pnp/
+.pnp.cjs
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.npm
+
+# Lockfiles (keep if you want deterministic installs)
+# pnpm-lock.yaml
+# yarn.lock
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Caches / Coverage
+.cache
+coverage/
+.nyc_output
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+.eslintcache
+.stylelintcache
+
+# Build outputs
+.next/
+out/
+build/
+dist/
+.turbo/
+.vercel/
+.parcel-cache/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Prisma (local dbs)
+**/*.db
+**/*.sqlite
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode-test
+
+# Misc frameworks
+.nuxt/
+.vuepress/dist
+.temp/
+.docusaurus/
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+
+# Certificates (optional)
+*.pem

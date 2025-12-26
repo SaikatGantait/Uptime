@@ -1,7 +1,7 @@
 
 import { prismaClient } from "../src";
 
-const USER_ID = "4";
+const USER_ID = "demo-user";
 
 async function seed() {
     await prismaClient.user.create({
