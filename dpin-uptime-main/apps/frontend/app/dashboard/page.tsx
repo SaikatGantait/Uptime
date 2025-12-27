@@ -4,7 +4,6 @@ import { ChevronDown, ChevronUp, Globe, Plus, Moon, Sun } from 'lucide-react';
 import { useWebsites } from '@/hooks/useWebsites';
 import axios from 'axios';
 import { API_BACKEND_URL } from '@/config';
-import { useAuth } from '@clerk/nextjs';
 
 type UptimeStatus = "good" | "bad" | "unknown";
 
@@ -122,10 +121,13 @@ function WebsiteCard({ website }: { website: ProcessedWebsite }) {
 }
 
 function App() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const {websites, refreshWebsites} = useWebsites();
-  const { getToken } = useAuth();
+  const [mounted, setMounted] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const processedWebsites = useMemo(() => {
     return websites.map(website => {
@@ -181,14 +183,11 @@ function App() {
     });
   }, [websites]);
 
-  // Toggle dark mode
-  React.useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+  // Theme is handled globally via ThemeProvider; no manual class toggling here.
+
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
@@ -199,16 +198,6 @@ function App() {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Uptime Monitor</h1>
           </div>
           <div className="flex items-center space-x-4">
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
-            >
-              {isDarkMode ? (
-                <Sun className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              ) : (
-                <Moon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              )}
-            </button>
             <button
               onClick={() => setIsModalOpen(true)}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
@@ -235,14 +224,16 @@ function App() {
             }
 
             setIsModalOpen(false)
-            const token = await getToken();
+            let headers: Record<string, string> = {};
+            if (typeof window !== 'undefined' && (window as any).Clerk?.session?.getToken) {
+              try {
+                const token = await (window as any).Clerk.session.getToken();
+                if (token) headers.Authorization = token as string;
+              } catch {}
+            }
             axios.post(`${API_BACKEND_URL}/api/v1/website`, {
                 url,
-            }, {
-              headers: {
-                Authorization: token || "",
-              },
-            })
+            }, { headers })
             .then(() => {
                 refreshWebsites();
             })
