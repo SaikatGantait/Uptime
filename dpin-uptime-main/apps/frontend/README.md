@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# frontend
 
-## Getting Started
+Next.js dashboard UI for the uptime monitoring platform.
 
-First, run the development server:
+## Features
+
+- Website management (add, view, delete)
+- Real-time uptime status visualization
+- 30-minute tick history with aggregated 3-minute windows
+- Optional Clerk authentication
+- Dark mode by default
+
+## Running
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+bun run dev     # Development server (port 3000)
+bun run build   # Production build
+bun run start   # Production server
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment Variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Required:
+- `NEXT_PUBLIC_API_URL` - Backend API URL (default: `http://localhost:5050`)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Optional:
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk authentication key (leave empty to disable auth)
 
-## Learn More
+## Routes
 
-To learn more about Next.js, take a look at the following resources:
+- `/` - Landing page with features and pricing
+- `/dashboard` - Main dashboard for managing and monitoring websites
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Authentication
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+If `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is set, the app uses Clerk for authentication and passes JWT tokens to the backend.
 
-## Deploy on Vercel
+If not set, the app runs in demo mode and the backend should have `DISABLE_AUTH=true`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

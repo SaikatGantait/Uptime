@@ -1,3 +1,8 @@
+import dotenv from 'dotenv';
+
+// Load .env from monorepo root (two levels up from apps/hub)
+dotenv.config({ path: '../../.env' });
+
 import { randomUUIDv7, type ServerWebSocket } from "bun";
 import type { IncomingMessage, SignupIncomingMessage } from "common/types";
 import { prismaClient } from "db/client";
@@ -117,7 +122,8 @@ setInterval(async () => {
                 type: 'validate',
                 data: {
                     url: website.url,
-                    callbackId
+                    callbackId,
+                    websiteId: website.id,
                 },
             }));
 

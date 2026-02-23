@@ -1,9 +1,35 @@
 "use client";
 import React, { useState, useMemo } from 'react';
-import { ChevronDown, ChevronUp, Globe, Plus, Moon, Sun } from 'lucide-react';
+import { ChevronDown, ChevronUp, Globe, Plus } from 'lucide-react';
 import { useWebsites } from '@/hooks/useWebsites';
 import axios from 'axios';
 import { API_BACKEND_URL } from '@/config';
+
+type ClerkWindow = Window & {
+  Clerk?: {
+    session?: {
+      getToken?: () => Promise<string | null>;
+    };
+  };
+};
+
+async function getClerkAuthHeader(): Promise<Record<string, string>> {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  const clerk = (window as ClerkWindow).Clerk;
+  if (!clerk?.session?.getToken) {
+    return {};
+  }
+
+  try {
+    const token = await clerk.session.getToken();
+    return token ? { Authorization: token } : {};
+  } catch {
+    return {};
+  }
+}
 
 type UptimeStatus = "good" | "bad" | "unknown";
 
@@ -224,13 +250,7 @@ function App() {
             }
 
             setIsModalOpen(false)
-            let headers: Record<string, string> = {};
-            if (typeof window !== 'undefined' && (window as any).Clerk?.session?.getToken) {
-              try {
-                const token = await (window as any).Clerk.session.getToken();
-                if (token) headers.Authorization = token as string;
-              } catch {}
-            }
+            const headers = await getClerkAuthHeader();
             axios.post(`${API_BACKEND_URL}/api/v1/website`, {
                 url,
             }, { headers })

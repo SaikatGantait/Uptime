@@ -26,24 +26,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const hasClerkKey = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  
+  const content = (
+    <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} suppressHydrationWarning>
+      <ThemeProvider defaultTheme="dark" attribute="class" forcedTheme="dark">
+        <Appbar />
+        {children}
+      </ThemeProvider>
+    </body>
+  );
+
   return (
     <html lang="en" className="dark" style={{ colorScheme: 'dark' }} suppressHydrationWarning>
       {hasClerkKey ? (
         <ClerkProvider>
-          <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-            <ThemeProvider defaultTheme="dark" attribute="class" forcedTheme="dark">
-              <Appbar />
-              {children}
-            </ThemeProvider>
-          </body>
+          {content}
         </ClerkProvider>
       ) : (
-        <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-          <ThemeProvider defaultTheme="dark" attribute="class" forcedTheme="dark">
-            <Appbar />
-            {children}
-          </ThemeProvider>
-        </body>
+        content
       )}
     </html>
   );

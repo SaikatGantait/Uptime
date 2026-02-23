@@ -3,6 +3,32 @@ import { API_BACKEND_URL } from "@/config";
 import axios from "axios";
 import { useEffect, useState } from "react";
 
+type ClerkWindow = Window & {
+    Clerk?: {
+        session?: {
+            getToken?: () => Promise<string | null>;
+        };
+    };
+};
+
+async function getClerkAuthHeader(): Promise<Record<string, string>> {
+    if (typeof window === "undefined") {
+        return {};
+    }
+
+    const clerk = (window as ClerkWindow).Clerk;
+    if (!clerk?.session?.getToken) {
+        return {};
+    }
+
+    try {
+        const token = await clerk.session.getToken();
+        return token ? { Authorization: token } : {};
+    } catch {
+        return {};
+    }
+}
+
 interface Website {
     id: string;
     url: string;
@@ -17,14 +43,8 @@ interface Website {
 export function useWebsites() {
     const [websites, setWebsites] = useState<Website[]>([]);
 
-    async function refreshWebsites() {    
-        let headers: Record<string, string> = {};
-        if (typeof window !== 'undefined' && (window as any).Clerk?.session?.getToken) {
-            try {
-                const token = await (window as any).Clerk.session.getToken();
-                if (token) headers.Authorization = token as string;
-            } catch {}
-        }
+    async function refreshWebsites() {
+        const headers = await getClerkAuthHeader();
         const response = await axios.get(`${API_BACKEND_URL}/api/v1/websites`, { headers });
 
         setWebsites(response.data.websites);

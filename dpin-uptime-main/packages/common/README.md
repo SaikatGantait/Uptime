@@ -1,15 +1,24 @@
 # common
 
-To install dependencies:
+Shared TypeScript types for WebSocket messages between hub and validators.
 
-```bash
-bun install
+## Usage
+
+```typescript
+import type { IncomingMessage, OutgoingMessage } from "common/types";
 ```
 
-To run:
+## Message Types
 
-```bash
-bun run index.ts
-```
+### Hub-side (IncomingMessage)
+Messages received by the hub from validators:
+- `SignupIncomingMessage` - Validator registration
+- `ValidateIncomingMessage` - Validation results
 
-This project was created using `bun init` in bun v1.2.2. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+### Validator-side (OutgoingMessage)
+Messages sent by the hub to validators:
+- `SignupOutgoingMessage` - Registration confirmation
+- `ValidateOutgoingMessage` - Validation request
+
+All messages are signed with Solana keypairs for authenticity verification.
+
