@@ -3,15 +3,63 @@ import type { OutgoingMessage, SignupOutgoingMessage, ValidateOutgoingMessage } 
 import { Keypair } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import nacl_util from "tweetnacl-util";
+import dotenv from "dotenv";
+import bs58 from "bs58";
+
+dotenv.config({ path: '../../.env' });
+dotenv.config();
 
 const CALLBACKS: {[callbackId: string]: (data: SignupOutgoingMessage) => void} = {}
 
 let validatorId: string | null = null;
 
+function parsePrivateKeyBytes(raw: string): Uint8Array {
+    const trimmed = raw.trim();
+
+    if (trimmed.startsWith("[")) {
+        const parsed = JSON.parse(trimmed);
+        if (!Array.isArray(parsed)) {
+            throw new Error("PRIVATE_KEY JSON must be an array");
+        }
+        return Uint8Array.from(parsed);
+    }
+
+    if (/^\d+(\s*,\s*\d+)+$/.test(trimmed)) {
+        return Uint8Array.from(trimmed.split(",").map(v => Number(v.trim())));
+    }
+
+    return bs58.decode(trimmed);
+}
+
+function loadValidatorKeypair(): Keypair {
+    const rawPrivateKey = process.env.PRIVATE_KEY;
+
+    if (!rawPrivateKey) {
+        console.warn("⚠️  PRIVATE_KEY not found. Using an ephemeral validator keypair for this session.");
+        return Keypair.generate();
+    }
+
+    try {
+        const privateKeyBytes = parsePrivateKeyBytes(rawPrivateKey);
+
+        if (privateKeyBytes.length === 64) {
+            return Keypair.fromSecretKey(privateKeyBytes);
+        }
+
+        if (privateKeyBytes.length === 32) {
+            return Keypair.fromSeed(privateKeyBytes);
+        }
+
+        throw new Error(`Unsupported key length ${privateKeyBytes.length}. Expected 32 or 64 bytes.`);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown parsing error";
+        console.warn(`⚠️  Invalid PRIVATE_KEY (${message}). Using an ephemeral validator keypair for this session.`);
+        return Keypair.generate();
+    }
+}
+
 async function main() {
-    const keypair = Keypair.fromSecretKey(
-        Uint8Array.from(JSON.parse(process.env.PRIVATE_KEY!))
-    );
+    const keypair = loadValidatorKeypair();
     const ws = new WebSocket("ws://localhost:8081");
 
     ws.onmessage = async (event) => {
@@ -36,7 +84,7 @@ async function main() {
             data: {
                 callbackId,
                 ip: '127.0.0.1',
-                publicKey: keypair.publicKey,
+                publicKey: keypair.publicKey.toBase58(),
                 signedMessage,
             },
         }));
