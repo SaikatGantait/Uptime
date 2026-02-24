@@ -12,13 +12,15 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const decoded = jwt.verify(token, JWT_PUBLIC_KEY);
-    console.log(decoded);
-    if (!decoded || !decoded.sub) {
+    try {
+        const decoded = jwt.verify(token, JWT_PUBLIC_KEY);
+        if (!decoded || typeof decoded === "string" || !decoded.sub) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        req.userId = decoded.sub as string;
+        next();
+    } catch {
         return res.status(401).json({ error: 'Unauthorized' });
     }
-
-    req.userId = decoded.sub as string;
-    
-    next()
 }

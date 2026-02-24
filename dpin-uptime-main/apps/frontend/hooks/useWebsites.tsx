@@ -1,7 +1,8 @@
 "use client";
 import { API_BACKEND_URL } from "@/config";
 import axios from "axios";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 interface Website {
     id: string;
@@ -16,21 +17,21 @@ interface Website {
 
 export function useWebsites() {
     const [websites, setWebsites] = useState<Website[]>([]);
+    const { getToken, isLoaded } = useAuth();
 
-    async function refreshWebsites() {    
-        let headers: Record<string, string> = {};
-        if (typeof window !== 'undefined' && (window as any).Clerk?.session?.getToken) {
-            try {
-                const token = await (window as any).Clerk.session.getToken();
-                if (token) headers.Authorization = token as string;
-            } catch {}
-        }
+    const refreshWebsites = useCallback(async () => {
+        const token = await getToken();
+        const headers = token ? { Authorization: token } : {};
         const response = await axios.get(`${API_BACKEND_URL}/api/v1/websites`, { headers });
 
         setWebsites(response.data.websites);
-    }
+    }, [getToken]);
 
     useEffect(() => {
+        if (!isLoaded) {
+            return;
+        }
+
         refreshWebsites();
 
         const interval = setInterval(() => {
@@ -38,7 +39,7 @@ export function useWebsites() {
         }, 1000 * 60 * 1);
 
         return () => clearInterval(interval);
-    }, []);
+    }, [isLoaded, refreshWebsites]);
 
     return { websites, refreshWebsites };
 

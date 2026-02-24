@@ -1,15 +1,42 @@
 # db
 
-To install dependencies:
+Shared Prisma database client for the uptime monitoring platform.
 
-```bash
-bun install
+## Usage
+
+This package is referenced by other apps via workspace imports:
+
+```typescript
+import { prismaClient } from "db/client";
 ```
 
-To run:
+## Database Schema
+
+- **User** - Platform users
+- **Website** - Monitored websites
+- **Validator** - Registered validator nodes
+- **WebsiteTick** - Individual uptime check results
+
+## Setup
+
+1. Set `DATABASE_URL` in the root `.env` file
+2. Run migrations:
 
 ```bash
-bun run index.ts
+cd packages/db
+npx prisma migrate dev
+npx prisma generate
 ```
 
-This project was created using `bun init` in bun v1.2.2. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+## Adding Migrations
+
+```bash
+npx prisma migrate dev --name description_of_change
+```
+
+## Seeding
+
+```bash
+npx prisma db seed
+```
+
