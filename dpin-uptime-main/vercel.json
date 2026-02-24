@@ -1,0 +1,8 @@
+{
+  "buildCommand": "turbo run build --filter=frontend",
+  "outputDirectory": "apps/frontend/.next",
+  "env": [
+    "NEXT_PUBLIC_API_URL",
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
+  ]
+}
