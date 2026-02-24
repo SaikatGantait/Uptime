@@ -1,52 +1,39 @@
 "use client";
 import React, { useState, useMemo } from 'react';
-import { ChevronDown, ChevronUp, Globe, Plus } from 'lucide-react';
+import { Activity, AlertTriangle, ChevronDown, ChevronUp, Clock, Globe, Plus, Search } from 'lucide-react';
 import { useWebsites } from '@/hooks/useWebsites';
 import axios from 'axios';
 import { API_BACKEND_URL } from '@/config';
-
-type ClerkWindow = Window & {
-  Clerk?: {
-    session?: {
-      getToken?: () => Promise<string | null>;
-    };
-  };
-};
-
-async function getClerkAuthHeader(): Promise<Record<string, string>> {
-  if (typeof window === 'undefined') {
-    return {};
-  }
-
-  const clerk = (window as ClerkWindow).Clerk;
-  if (!clerk?.session?.getToken) {
-    return {};
-  }
-
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: token } : {};
-  } catch {
-    return {};
-  }
-}
+import { useAuth } from '@clerk/nextjs';
 
 type UptimeStatus = "good" | "bad" | "unknown";
 
 function StatusCircle({ status }: { status: UptimeStatus }) {
   return (
-    <div className={`w-3 h-3 rounded-full ${status === 'good' ? 'bg-green-500' : status === 'bad' ? 'bg-red-500' : 'bg-gray-500'}`} />
+    <div
+      className={`flex h-3.5 w-3.5 items-center justify-center rounded-full ring-4 ring-white/10 ${
+        status === 'good'
+          ? 'bg-emerald-400 ring-emerald-400/10'
+          : status === 'bad'
+            ? 'bg-rose-400 ring-rose-400/10'
+            : 'bg-slate-400 ring-slate-400/10'
+      }`}
+    />
   );
 }
 
 function UptimeTicks({ ticks }: { ticks: UptimeStatus[] }) {
   return (
-    <div className="flex gap-1 mt-2">
+    <div className="flex gap-1 mt-3">
       {ticks.map((tick, index) => (
         <div
           key={index}
-          className={`w-8 h-2 rounded ${
-            tick === 'good' ? 'bg-green-500' : tick === 'bad' ? 'bg-red-500' : 'bg-gray-500'
+          className={`h-2 w-7 rounded-full ${
+            tick === 'good'
+              ? 'bg-emerald-400/80'
+              : tick === 'bad'
+                ? 'bg-rose-400/80'
+                : 'bg-slate-500/60'
           }`}
         />
       ))}
@@ -59,37 +46,38 @@ function CreateWebsiteModal({ isOpen, onClose }: { isOpen: boolean; onClose: (ur
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-4 dark:text-white">Add New Website</h2>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              URL
-            </label>
-            <input
-              type="url"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
-              placeholder="https://example.com"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-          </div>
-          <div className="flex justify-end space-x-3 mt-6">
-            <button
-              type="button"
-              onClick={() => onClose(null)}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              onClick={() => onClose(url)}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
-            >
-              Add Website
-            </button>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+        <h2 className="text-xl font-semibold text-white">Add a website monitor</h2>
+        <p className="mt-2 text-sm text-slate-400">We will ping your endpoint every minute and alert on anomalies.</p>
+        <div className="mt-6">
+          <label className="block text-xs font-medium uppercase tracking-wide text-slate-400 mb-2">
+            Website URL
+          </label>
+          <input
+            type="url"
+            className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-cyan-400/60 focus:outline-none"
+            placeholder="https://example.com"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => onClose(null)}
+            className="rounded-full border border-white/10 px-4 py-2 text-sm text-white/80 hover:border-white/20"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            onClick={() => onClose(url)}
+            className="rounded-full bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
+          >
+            Add monitor
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -108,38 +96,34 @@ function WebsiteCard({ website }: { website: ProcessedWebsite }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
-      <div
-        className="p-4 cursor-pointer flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700"
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:border-cyan-400/30 hover:bg-white/10">
+      <button
+        className="flex w-full items-center justify-between text-left"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center gap-4">
           <StatusCircle status={website.status} />
           <div>
-            <h3 className="font-semibold text-gray-900 dark:text-white">{website.url}</h3>
+            <h3 className="text-sm font-semibold text-white">{website.url}</h3>
+            <p className="text-xs text-slate-400">Last checked {website.lastChecked}</p>
           </div>
         </div>
-        <div className="flex items-center space-x-4">
-          <span className="text-sm text-gray-600 dark:text-gray-300">
+        <div className="flex items-center gap-4">
+          <span className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1 text-xs text-slate-200">
             {website.uptimePercentage.toFixed(1)}% uptime
           </span>
           {isExpanded ? (
-            <ChevronUp className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+            <ChevronUp className="h-4 w-4 text-slate-400" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+            <ChevronDown className="h-4 w-4 text-slate-400" />
           )}
         </div>
-      </div>
-      
+      </button>
+
       {isExpanded && (
-        <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700">
-          <div className="mt-3">
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">Last 30 minutes status:</p>
-            <UptimeTicks ticks={website.uptimeTicks} />
-          </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            Last checked: {website.lastChecked}
-          </p>
+        <div className="mt-4 border-t border-white/10 pt-4">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Last 30 minutes status</p>
+          <UptimeTicks ticks={website.uptimeTicks} />
         </div>
       )}
     </div>
@@ -148,7 +132,9 @@ function WebsiteCard({ website }: { website: ProcessedWebsite }) {
 
 function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const {websites, refreshWebsites} = useWebsites();
+  const { getToken } = useAuth();
   const [mounted, setMounted] = useState(false);
 
   React.useEffect(() => {
@@ -215,29 +201,78 @@ function App() {
     return null;
   }
 
+  const totalMonitors = processedWebsites.length;
+  const upMonitors = processedWebsites.filter((website) => website.status === "good").length;
+  const downMonitors = processedWebsites.filter((website) => website.status === "bad").length;
+  const averageUptime = totalMonitors === 0
+    ? 100
+    : processedWebsites.reduce((sum, website) => sum + website.uptimePercentage, 0) / totalMonitors;
+  const filteredWebsites = processedWebsites.filter((website) =>
+    website.url.toLowerCase().includes(query.toLowerCase())
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-2">
-            <Globe className="w-8 h-8 text-blue-600" />
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Uptime Monitor</h1>
+    <div className="min-h-screen bg-slate-950 text-white">
+      <div className="mx-auto max-w-6xl px-6 py-10">
+        <div className="flex flex-wrap items-center justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-2 text-sm text-cyan-300">
+              <Activity className="h-4 w-4" />
+              Live monitoring
+            </div>
+            <h1 className="mt-2 text-3xl font-semibold">Uptime command center</h1>
+            <p className="mt-2 text-sm text-slate-400">Track status changes, latency, and availability in real time.</p>
           </div>
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Website</span>
-            </button>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-cyan-400 px-5 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
+          >
+            <Plus className="h-4 w-4" />
+            Add monitor
+          </button>
+        </div>
+
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <DashboardStat label="Total monitors" value={totalMonitors.toString()} icon={<Globe className="h-4 w-4" />} />
+          <DashboardStat label="Healthy" value={upMonitors.toString()} icon={<Activity className="h-4 w-4" />} accent="emerald" />
+          <DashboardStat label="Degraded" value={downMonitors.toString()} icon={<AlertTriangle className="h-4 w-4" />} accent="rose" />
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-slate-300">
+            <Clock className="h-4 w-4" />
+            Avg. uptime {averageUptime.toFixed(1)}%
+          </div>
+          <div className="relative flex-1 md:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search monitors"
+              className="w-full rounded-full border border-white/10 bg-slate-900 py-2 pl-9 pr-4 text-sm text-white placeholder:text-slate-500 focus:border-cyan-400/60 focus:outline-none"
+            />
           </div>
         </div>
-        
-        <div className="space-y-4">
-          {processedWebsites.map((website) => (
-            <WebsiteCard key={website.id} website={website} />
-          ))}
+
+        <div className="mt-6 space-y-4">
+          {filteredWebsites.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-white/10 bg-white/5 p-10 text-center">
+              <Globe className="mx-auto h-10 w-10 text-cyan-300" />
+              <h2 className="mt-4 text-lg font-semibold">No monitors yet</h2>
+              <p className="mt-2 text-sm text-slate-400">Add your first website to start tracking uptime and latency.</p>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="mt-6 inline-flex items-center gap-2 rounded-full bg-cyan-400 px-5 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
+              >
+                <Plus className="h-4 w-4" />
+                Add a monitor
+              </button>
+            </div>
+          ) : (
+            filteredWebsites.map((website) => (
+              <WebsiteCard key={website.id} website={website} />
+            ))
+          )}
         </div>
       </div>
 
@@ -250,12 +285,16 @@ function App() {
             }
 
             setIsModalOpen(false)
-            const headers = await getClerkAuthHeader();
+            const token = await getToken();
+            const headers = token ? { Authorization: token } : {};
             axios.post(`${API_BACKEND_URL}/api/v1/website`, {
-                url,
+              url,
             }, { headers })
             .then(() => {
-                refreshWebsites();
+              refreshWebsites();
+            })
+            .catch(() => {
+              setIsModalOpen(true);
             })
         }}
       />
@@ -264,3 +303,31 @@ function App() {
 }
 
 export default App;
+
+function DashboardStat({
+  label,
+  value,
+  icon,
+  accent,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  accent?: "emerald" | "rose";
+}) {
+  const accentClasses = accent === "emerald"
+    ? "text-emerald-300 bg-emerald-400/10 border-emerald-400/20"
+    : accent === "rose"
+      ? "text-rose-300 bg-rose-400/10 border-rose-400/20"
+      : "text-cyan-300 bg-cyan-400/10 border-cyan-400/20";
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+      <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${accentClasses}`}>
+        {icon}
+        {label}
+      </div>
+      <p className="mt-4 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}
