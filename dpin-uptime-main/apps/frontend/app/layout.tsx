@@ -25,8 +25,10 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
   return (
-    <ClerkProvider>
+    <ClerkProvider publishableKey={clerkPublishableKey || ""}>
       <html lang="en" className="dark" style={{ colorScheme: "dark" }} suppressHydrationWarning>
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} suppressHydrationWarning>
           <ThemeProvider defaultTheme="dark" attribute="class" forcedTheme="dark">
