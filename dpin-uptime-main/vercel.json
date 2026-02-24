@@ -1,9 +1,15 @@
 {
-  "buildCommand": "turbo run build --filter=frontend",
-  "outputDirectory": "apps/frontend/.next",
-  "env": [
-    "NEXT_PUBLIC_API_URL",
-    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-    "CLERK_SECRET_KEY"
+  "version": 2,
+  "builds": [
+    {
+      "src": "apps/frontend/package.json",
+      "use": "@vercel/next"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "apps/frontend/$1"
+    }
   ]
 }
