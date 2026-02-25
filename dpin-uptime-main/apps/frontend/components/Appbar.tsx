@@ -30,12 +30,12 @@ export function Appbar() {
           <Link className="transition hover:text-white" href="/dashboard">
             Dashboard
           </Link>
-          <a className="transition hover:text-white" href="#features">
+          <Link className="transition hover:text-white" href="/#features">
             Features
-          </a>
-          <a className="transition hover:text-white" href="#pricing">
+          </Link>
+          <Link className="transition hover:text-white" href="/#pricing">
             Pricing
-          </a>
+          </Link>
         </nav>
         <div className="flex items-center gap-2">
           <Link

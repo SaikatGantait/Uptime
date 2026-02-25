@@ -121,14 +121,49 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  ::selection {
+    background: oklch(0.62 0.14 248 / 35%);
+    color: inherit;
+  }
+
   html {
     scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-background text-foreground;
     background-image: var(--page-glow), var(--page-grid);
     background-attachment: fixed;
     background-size: 120% 120%, 100% 100%;
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'],
+  .select-text {
+    user-select: text;
+  }
+}
+
+@media (forced-colors: active) {
+  html,
+  body,
+  button,
+  input,
+  textarea,
+  select,
+  a,
+  span,
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    forced-color-adjust: none;
   }
 }
 

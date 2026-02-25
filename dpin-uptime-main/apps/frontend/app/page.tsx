@@ -2,6 +2,7 @@
 import React from 'react';
 import { Activity, ArrowRight, BarChart3, Bell, Check, Globe2, ShieldCheck, Sparkles, Zap } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 function App() {
   const router = useRouter();
@@ -74,7 +75,7 @@ function App() {
         </div>
       </section>
 
-      <section id="features" className="bg-slate-950 pb-8">
+      <section id="features" className="scroll-mt-24 bg-slate-950 pb-8">
         <div className="mx-auto max-w-6xl px-6 py-16">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
@@ -131,7 +132,7 @@ function App() {
         </div>
       </section>
 
-      <section id="pricing" className="bg-slate-950 pb-16">
+      <section id="pricing" className="scroll-mt-24 bg-slate-950 pb-16">
         <div className="mx-auto max-w-6xl px-6 py-16">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
@@ -197,9 +198,33 @@ function App() {
               </div>
               <p className="mt-3 text-sm text-slate-400">Always-on visibility for modern digital products.</p>
             </div>
-            <FooterColumn title="Product" items={["Features", "Pricing", "Integrations", "Changelog"]} />
-            <FooterColumn title="Company" items={["About", "Careers", "Blog", "Press"]} />
-            <FooterColumn title="Trust" items={["Security", "Status", "Compliance", "Terms"]} />
+            <FooterColumn
+              title="Product"
+              items={[
+                { label: "Features", href: "/#features" },
+                { label: "Pricing", href: "/#pricing" },
+                { label: "Integrations", href: "#" },
+                { label: "Changelog", href: "#" },
+              ]}
+            />
+            <FooterColumn
+              title="Company"
+              items={[
+                { label: "About", href: "#" },
+                { label: "Careers", href: "#" },
+                { label: "Blog", href: "#" },
+                { label: "Press", href: "#" },
+              ]}
+            />
+            <FooterColumn
+              title="Trust"
+              items={[
+                { label: "Security", href: "#" },
+                { label: "Status", href: "#" },
+                { label: "Compliance", href: "#" },
+                { label: "Terms", href: "#" },
+              ]}
+            />
           </div>
           <div className="mt-10 border-t border-white/10 pt-6 text-xs text-slate-500">
             © 2026 DPin Uptime. All rights reserved.
@@ -312,16 +337,16 @@ function ChecklistItem({ children }: { children: React.ReactNode }) {
   );
 }
 
-function FooterColumn({ title, items }: { title: string; items: string[] }) {
+function FooterColumn({ title, items }: { title: string; items: { label: string; href: string }[] }) {
   return (
     <div>
       <h3 className="text-sm font-semibold text-white">{title}</h3>
       <ul className="mt-3 space-y-2 text-sm text-slate-400">
         {items.map((item) => (
-          <li key={item}>
-            <a className="transition hover:text-white" href="#">
-              {item}
-            </a>
+          <li key={item.label}>
+            <Link className="transition hover:text-white" href={item.href}>
+              {item.label}
+            </Link>
           </li>
         ))}
       </ul>

@@ -104,7 +104,7 @@ function WebsiteCard({ website }: { website: ProcessedWebsite }) {
         <div className="flex items-center gap-4">
           <StatusCircle status={website.status} />
           <div>
-            <h3 className="text-sm font-semibold text-white">{website.url}</h3>
+            <h3 className="select-text text-sm font-semibold text-white">{website.url}</h3>
             <p className="text-xs text-slate-400">Last checked {website.lastChecked}</p>
           </div>
         </div>
