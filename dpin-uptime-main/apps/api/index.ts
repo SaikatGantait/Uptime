@@ -13,6 +13,14 @@ import { Transaction, SystemProgram, Connection, Keypair, PublicKey } from "@sol
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 const app = express();
 
+function isValidEmail(value: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidPhone(value: string) {
+    return /^\+[1-9]\d{6,14}$/.test(value);
+}
+
 function slugify(value: string) {
     return value
         .toLowerCase()
@@ -157,6 +165,9 @@ app.patch("/api/v1/website/:websiteId/policy", authMiddleware, async (req, res) 
         sloTarget,
         errorBudgetWindowMinutes,
         teamName,
+        snoozeUntil,
+        maintenanceStartAt,
+        maintenanceEndAt,
     } = req.body ?? {};
 
     const website = await prismaClient.website.findFirst({
@@ -184,6 +195,9 @@ app.patch("/api/v1/website/:websiteId/policy", authMiddleware, async (req, res) 
             sloTarget: Number.isFinite(sloTarget) ? Number(sloTarget) : website.sloTarget,
             errorBudgetWindowMinutes: Number.isFinite(errorBudgetWindowMinutes) ? Math.max(60, Number(errorBudgetWindowMinutes)) : website.errorBudgetWindowMinutes,
             teamName: typeof teamName === "string" ? teamName : website.teamName,
+            snoozeUntil: typeof snoozeUntil === "string" ? new Date(snoozeUntil) : website.snoozeUntil,
+            maintenanceStartAt: typeof maintenanceStartAt === "string" ? new Date(maintenanceStartAt) : website.maintenanceStartAt,
+            maintenanceEndAt: typeof maintenanceEndAt === "string" ? new Date(maintenanceEndAt) : website.maintenanceEndAt,
         },
     });
 
@@ -193,7 +207,7 @@ app.patch("/api/v1/website/:websiteId/policy", authMiddleware, async (req, res) 
 app.post("/api/v1/website/:websiteId/alert-routes", authMiddleware, async (req, res) => {
     const userId = req.userId!;
     const websiteId = req.params.websiteId;
-    const { targetTeam, minSeverity = "P3", channel = "WEBHOOK" } = req.body ?? {};
+    const { targetTeam, escalationTargetTeam, escalationAfterMinutes = 10, minSeverity = "P3", channel = "WEBHOOK" } = req.body ?? {};
 
     const website = await prismaClient.website.findFirst({ where: { id: websiteId, userId, disabled: false } });
     if (!website) {
@@ -204,6 +218,8 @@ app.post("/api/v1/website/:websiteId/alert-routes", authMiddleware, async (req, 
         data: {
             websiteId,
             targetTeam: typeof targetTeam === "string" && targetTeam.trim() ? targetTeam.trim() : website.teamName,
+            escalationTargetTeam: typeof escalationTargetTeam === "string" && escalationTargetTeam.trim() ? escalationTargetTeam.trim() : null,
+            escalationAfterMinutes: Number.isFinite(escalationAfterMinutes) ? Math.max(1, Number(escalationAfterMinutes)) : 10,
             minSeverity,
             channel,
         },
@@ -249,16 +265,104 @@ app.post("/api/v1/website/:websiteId/integrations", authMiddleware, async (req, 
         return res.status(400).json({ error: "endpoint is required" });
     }
 
+    const normalizedType = typeof type === "string" ? type.toUpperCase() : "WEBHOOK";
+    if (normalizedType === "EMAIL" && !isValidEmail(endpoint)) {
+        return res.status(400).json({ error: "endpoint must be a valid email for EMAIL integration" });
+    }
+    if (normalizedType === "SMS" && !isValidPhone(endpoint)) {
+        return res.status(400).json({ error: "endpoint must be E.164 phone number for SMS integration (e.g. +15551234567)" });
+    }
+
     const integration = await prismaClient.integrationChannel.create({
         data: {
             websiteId,
-            type,
+            type: normalizedType,
             endpoint,
             enabled: true,
         },
     });
 
     return res.json({ integration });
+});
+
+app.post("/api/v1/website/:websiteId/test-alert", authMiddleware, async (req, res) => {
+    const userId = req.userId!;
+    const websiteId = req.params.websiteId;
+    const { channel } = req.body ?? {};
+
+    const website = await prismaClient.website.findFirst({
+        where: { id: websiteId, userId, disabled: false },
+    });
+
+    if (!website) {
+        return res.status(404).json({ error: "website not found" });
+    }
+
+    const requestedChannel = typeof channel === "string" && channel.trim()
+        ? channel.trim().toUpperCase()
+        : null;
+
+    const allowedChannels = ["EMAIL", "SMS", "WEBHOOK", "SLACK", "DISCORD", "TEAMS", "PAGERDUTY", "OPSGENIE"];
+    if (requestedChannel && !allowedChannels.includes(requestedChannel)) {
+        return res.status(400).json({ error: "invalid channel filter" });
+    }
+
+    const integrations = await prismaClient.integrationChannel.findMany({
+        where: {
+            websiteId,
+            enabled: true,
+            ...(requestedChannel ? { type: requestedChannel as "EMAIL" | "SMS" | "WEBHOOK" | "SLACK" | "DISCORD" | "TEAMS" | "PAGERDUTY" | "OPSGENIE" } : {}),
+        },
+    });
+
+    if (integrations.length === 0) {
+        return res.status(400).json({ error: "no enabled integrations found for this website" });
+    }
+
+    const now = new Date();
+    const incident = await prismaClient.incident.create({
+        data: {
+            websiteId,
+            status: "RESOLVED",
+            startedAt: now,
+            resolvedAt: now,
+            severity: "P3",
+            summary: `Manual test alert for ${website.url}`,
+        },
+    });
+
+    await prismaClient.incidentEvent.create({
+        data: {
+            incidentId: incident.id,
+            type: "NOTE",
+            message: `Manual test alert queued by user ${userId}.`,
+        },
+    });
+
+    const payload = {
+        title: `🧪 Test alert • ${website.url}`,
+        summary: `This is a manual test alert for ${website.url}. If you received this, your integration works.`,
+    };
+
+    await prismaClient.alertDelivery.createMany({
+        data: integrations.map((integration) => ({
+            incidentId: incident.id,
+            channelType: integration.type,
+            destination: integration.endpoint,
+            status: "queued",
+            notificationKind: "TEST",
+            attempts: 0,
+            maxAttempts: 5,
+            nextRetryAt: new Date(),
+            payload: JSON.stringify(payload),
+        })),
+    });
+
+    return res.json({
+        message: "test alert queued",
+        queued: integrations.length,
+        channels: integrations.map((integration) => integration.type),
+    });
 });
 
 app.get("/api/v1/website/:websiteId/analytics", authMiddleware, async (req, res) => {
@@ -302,6 +406,19 @@ app.get("/api/v1/website/:websiteId/analytics", authMiddleware, async (req, res)
         orderBy: { startedAt: "desc" },
     });
 
+    const from1h = new Date(Date.now() - 60 * 60 * 1000);
+    const from6h = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    const ticks1h = ticks.filter((tick) => tick.createdAt >= from1h);
+    const ticks6h = ticks.filter((tick) => tick.createdAt >= from6h);
+    const errorRate = (set: typeof ticks) => {
+        if (set.length === 0) return 0;
+        const bad = set.filter((tick) => tick.status === "Bad").length;
+        return bad / set.length;
+    };
+    const allowedErrorRate = Math.max(0.0001, 1 - website.sloTarget / 100);
+    const burnRate1h = errorRate(ticks1h) / allowedErrorRate;
+    const burnRate6h = errorRate(ticks6h) / allowedErrorRate;
+
     const mttaSamples = incidents
         .filter((incident) => incident.acknowledgedAt)
         .map((incident) => incident.acknowledgedAt!.getTime() - incident.startedAt.getTime());
@@ -338,6 +455,10 @@ app.get("/api/v1/website/:websiteId/analytics", authMiddleware, async (req, res)
             mttaMs: average(mttaSamples),
             mttrMs: average(mttrSamples),
             regionalHeatmap,
+            burnRate: {
+                oneHour: burnRate1h,
+                sixHour: burnRate6h,
+            },
         },
     });
 });
@@ -345,7 +466,7 @@ app.get("/api/v1/website/:websiteId/analytics", authMiddleware, async (req, res)
 app.patch("/api/v1/website/:websiteId/status-page", authMiddleware, async (req, res) => {
     const userId = req.userId!;
     const websiteId = req.params.websiteId;
-    const { slug, title, isPublic } = req.body ?? {};
+    const { slug, title, isPublic, logoUrl, brandColor } = req.body ?? {};
 
     const website = await prismaClient.website.findFirst({
         where: { id: websiteId, userId, disabled: false },
@@ -365,6 +486,8 @@ app.patch("/api/v1/website/:websiteId/status-page", authMiddleware, async (req, 
             statusPageSlug: normalizedSlug,
             statusPageTitle: typeof title === "string" && title.trim() ? title.trim() : website.statusPageTitle,
             statusPagePublic: typeof isPublic === "boolean" ? isPublic : website.statusPagePublic,
+            statusPageLogoUrl: typeof logoUrl === "string" ? logoUrl : website.statusPageLogoUrl,
+            statusPageBrandColor: typeof brandColor === "string" ? brandColor : website.statusPageBrandColor,
         },
     });
 
@@ -394,6 +517,28 @@ app.get("/api/v1/incidents", authMiddleware, async (req, res) => {
     });
 
     return res.json({ incidents });
+});
+
+app.patch("/api/v1/website/:websiteId/maintenance", authMiddleware, async (req, res) => {
+    const userId = req.userId!;
+    const websiteId = req.params.websiteId;
+    const { maintenanceStartAt, maintenanceEndAt, snoozeMinutes } = req.body ?? {};
+
+    const website = await prismaClient.website.findFirst({ where: { id: websiteId, userId, disabled: false } });
+    if (!website) {
+        return res.status(404).json({ error: "website not found" });
+    }
+
+    const updated = await prismaClient.website.update({
+        where: { id: websiteId },
+        data: {
+            maintenanceStartAt: typeof maintenanceStartAt === "string" ? new Date(maintenanceStartAt) : website.maintenanceStartAt,
+            maintenanceEndAt: typeof maintenanceEndAt === "string" ? new Date(maintenanceEndAt) : website.maintenanceEndAt,
+            snoozeUntil: Number.isFinite(snoozeMinutes) ? new Date(Date.now() + Number(snoozeMinutes) * 60 * 1000) : website.snoozeUntil,
+        },
+    });
+
+    return res.json({ website: updated });
 });
 
 app.post("/api/v1/incidents/:incidentId/ack", authMiddleware, async (req, res) => {
@@ -434,6 +579,83 @@ app.post("/api/v1/incidents/:incidentId/ack", authMiddleware, async (req, res) =
     });
 
     return res.json({ message: "incident acknowledged" });
+});
+
+app.patch("/api/v1/incidents/:incidentId/resolve", authMiddleware, async (req, res) => {
+    const userId = req.userId!;
+    const incidentId = req.params.incidentId;
+    const { resolutionNote } = req.body ?? {};
+
+    const incident = await prismaClient.incident.findFirst({
+        where: {
+            id: incidentId,
+            website: {
+                userId,
+                disabled: false,
+            },
+        },
+    });
+
+    if (!incident) {
+        return res.status(404).json({ error: "incident not found" });
+    }
+
+    const now = new Date();
+    await prismaClient.$transaction(async (tx) => {
+        await tx.incident.update({
+            where: { id: incident.id },
+            data: {
+                status: "RESOLVED",
+                resolvedAt: now,
+                summary: typeof resolutionNote === "string" && resolutionNote.trim() ? resolutionNote.trim() : incident.summary,
+            },
+        });
+
+        await tx.incidentEvent.create({
+            data: {
+                incidentId: incident.id,
+                type: "RECOVERY",
+                message: typeof resolutionNote === "string" && resolutionNote.trim()
+                    ? `Resolved by user ${userId}: ${resolutionNote.trim()}`
+                    : `Resolved by user ${userId}`,
+            },
+        });
+    });
+
+    return res.json({ message: "incident resolved" });
+});
+
+app.patch("/api/v1/incidents/:incidentId/postmortem-template", authMiddleware, async (req, res) => {
+    const userId = req.userId!;
+    const incidentId = req.params.incidentId;
+    const { template } = req.body ?? {};
+
+    if (!template || typeof template !== "string") {
+        return res.status(400).json({ error: "template is required" });
+    }
+
+    const incident = await prismaClient.incident.findFirst({
+        where: {
+            id: incidentId,
+            website: {
+                userId,
+                disabled: false,
+            },
+        },
+    });
+
+    if (!incident) {
+        return res.status(404).json({ error: "incident not found" });
+    }
+
+    await prismaClient.incident.update({
+        where: { id: incident.id },
+        data: {
+            postmortemTemplate: template,
+        },
+    });
+
+    return res.json({ message: "postmortem template updated" });
 });
 
 app.get("/api/v1/incidents/:incidentId/postmortem-template", authMiddleware, async (req, res) => {
@@ -523,6 +745,8 @@ app.get("/api/v1/status/:slug", async (req, res) => {
             title: website.statusPageTitle,
             slug: website.statusPageSlug,
             url: website.url,
+            logoUrl: website.statusPageLogoUrl,
+            brandColor: website.statusPageBrandColor,
             currentStatus: currentTick?.status ?? "Unknown",
             currentLatency: currentTick?.latency ?? null,
             timeline: website.incidents.flatMap((incident) => incident.events),

@@ -71,11 +71,23 @@ export function useWebsites() {
     const { getToken, isLoaded } = useAuth();
 
     const refreshWebsites = useCallback(async () => {
-        const token = await getToken();
-        const headers = token ? { Authorization: token } : {};
-        const response = await axios.get(`${API_BACKEND_URL}/api/v1/websites`, { headers });
+        try {
+            const token = await getToken();
+            const headers = token ? { Authorization: token } : {};
+            const response = await axios.get(`${API_BACKEND_URL}/api/v1/websites`, {
+                headers,
+                timeout: 10000,
+            });
 
-        setWebsites(response.data.websites);
+            setWebsites(response.data.websites);
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                console.warn(`Unable to reach API at ${API_BACKEND_URL}. Is backend running?`);
+                return;
+            }
+
+            console.error("Unexpected error while fetching websites", error);
+        }
     }, [getToken]);
 
     useEffect(() => {
@@ -83,10 +95,10 @@ export function useWebsites() {
             return;
         }
 
-        refreshWebsites();
+        void refreshWebsites();
 
         const interval = setInterval(() => {
-            refreshWebsites();
+            void refreshWebsites();
         }, 1000 * 60 * 1);
 
         return () => clearInterval(interval);

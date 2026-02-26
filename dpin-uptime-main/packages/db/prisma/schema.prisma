@@ -33,7 +33,12 @@ model Website {
   statusPageSlug      String?
   statusPagePublic    Boolean         @default(false)
   statusPageTitle     String          @default("Service Status")
+  statusPageLogoUrl   String?
+  statusPageBrandColor String?
   lastAlertSentAt     DateTime?
+  snoozeUntil         DateTime?
+  maintenanceStartAt  DateTime?
+  maintenanceEndAt    DateTime?
   checkType           CheckType       @default(HTTP)
   expectedKeyword     String?
   dnsRecordType       String?
@@ -99,6 +104,8 @@ model AlertRoute {
   id            String      @id @default(uuid())
   websiteId     String
   targetTeam    String
+  escalationTargetTeam String?
+  escalationAfterMinutes Int  @default(10)
   minSeverity   AlertSeverity @default(P3)
   channel       IntegrationType @default(WEBHOOK)
   createdAt     DateTime    @default(now())
@@ -132,6 +139,14 @@ model AlertDelivery {
   channelType    IntegrationType
   destination    String
   status         String
+  notificationKind String        @default("FIRE")
+  attempts       Int             @default(0)
+  maxAttempts    Int             @default(5)
+  nextRetryAt    DateTime        @default(now())
+  sentAt         DateTime?
+  lastError      String?
+  externalId     String?
+  payload        String?
   createdAt      DateTime        @default(now())
   incident       Incident        @relation(fields: [incidentId], references: [id])
 }
@@ -156,6 +171,8 @@ enum AlertSeverity {
 }
 
 enum IntegrationType {
+  EMAIL
+  SMS
   WEBHOOK
   SLACK
   DISCORD
