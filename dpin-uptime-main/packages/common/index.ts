@@ -12,6 +12,8 @@ export interface ValidateIncomingMessage {
     latency: number;
     websiteId: string;
     validatorId: string;
+    severity: 'P1' | 'P2' | 'P3';
+    details?: string;
 }
 
 export interface SignupOutgoingMessage {
@@ -23,6 +25,13 @@ export interface ValidateOutgoingMessage {
     url: string,
     callbackId: string,
     websiteId: string;
+    retries: number;
+    checkType: 'HTTP' | 'MULTI_STEP' | 'KEYWORD' | 'DNS' | 'TLS';
+    expectedKeyword?: string | null;
+    dnsRecordType?: string | null;
+    dnsExpectedValue?: string | null;
+    tlsWarningDaysCsv?: string | null;
+    multiStepConfig?: string | null;
 }
 
 export type IncomingMessage = {

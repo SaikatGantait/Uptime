@@ -19,11 +19,33 @@ model User {
 }
 
 model Website {
-  id        String      @id     @default(uuid())
-  url       String
-  userId    String
-  ticks     WebsiteTick[]
-  disabled  Boolean     @default(false)
+  id                  String          @id @default(uuid())
+  url                 String
+  userId              String
+  ticks               WebsiteTick[]
+  incidents           Incident[]
+  disabled            Boolean         @default(false)
+  cooldownMinutes     Int             @default(10)
+  retries             Int             @default(2)
+  quorum              Int             @default(2)
+  validatorsPerRound  Int             @default(3)
+  escalationMinutes   Int             @default(5)
+  statusPageSlug      String?
+  statusPagePublic    Boolean         @default(false)
+  statusPageTitle     String          @default("Service Status")
+  lastAlertSentAt     DateTime?
+  checkType           CheckType       @default(HTTP)
+  expectedKeyword     String?
+  dnsRecordType       String?
+  dnsExpectedValue    String?
+  tlsWarningDaysCsv   String          @default("30,14,7")
+  multiStepConfig     String?
+  sloTarget           Float           @default(99.9)
+  errorBudgetWindowMinutes Int        @default(43200)
+  teamName            String          @default("default")
+  alertRoutes         AlertRoute[]
+  onCallSchedules     OnCallSchedule[]
+  integrations        IntegrationChannel[]
 }
 
 model Validator {
@@ -36,17 +58,125 @@ model Validator {
 }
 
 model WebsiteTick {
-  id              String      @id     @default(uuid())
+  id         String        @id @default(uuid())
+  websiteId  String
+  validatorId String
+  createdAt  DateTime
+  status     WebsiteStatus
+  latency    Float
+  severity   AlertSeverity  @default(P3)
+  details    String?
+  website    Website       @relation(fields: [websiteId], references: [id])
+  validator  Validator     @relation(fields: [validatorId], references: [id])
+}
+
+model Incident {
+  id                String          @id @default(uuid())
+  websiteId         String
+  status            IncidentStatus  @default(OPEN)
+  startedAt         DateTime        @default(now())
+  resolvedAt        DateTime?
+  acknowledgedAt    DateTime?
+  escalatedAt       DateTime?
+  summary           String?
+  postmortemTemplate String?
+  severity          AlertSeverity    @default(P3)
+  website           Website         @relation(fields: [websiteId], references: [id])
+  events            IncidentEvent[]
+  deliveries        AlertDelivery[]
+}
+
+model IncidentEvent {
+  id          String            @id @default(uuid())
+  incidentId  String
+  createdAt   DateTime          @default(now())
+  type        IncidentEventType
+  message     String
+  incident    Incident          @relation(fields: [incidentId], references: [id])
+}
+
+model AlertRoute {
+  id            String      @id @default(uuid())
+  websiteId     String
+  targetTeam    String
+  minSeverity   AlertSeverity @default(P3)
+  channel       IntegrationType @default(WEBHOOK)
+  createdAt     DateTime    @default(now())
+  website       Website     @relation(fields: [websiteId], references: [id])
+}
+
+model OnCallSchedule {
+  id              String      @id @default(uuid())
   websiteId       String
-  validatorId     String
-  createdAt       DateTime
-  status          WebsiteStatus
-  latency         Float
-  website         Website    @relation(fields: [websiteId], references: [id])
-  validator       Validator    @relation(fields: [validatorId], references: [id])
+  rotationName    String
+  timezone        String      @default("UTC")
+  quietHoursStart Int?
+  quietHoursEnd   Int?
+  createdAt       DateTime    @default(now())
+  website         Website     @relation(fields: [websiteId], references: [id])
+}
+
+model IntegrationChannel {
+  id            String          @id @default(uuid())
+  websiteId     String
+  type          IntegrationType
+  endpoint      String
+  enabled       Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  website       Website         @relation(fields: [websiteId], references: [id])
+}
+
+model AlertDelivery {
+  id             String          @id @default(uuid())
+  incidentId     String
+  channelType    IntegrationType
+  destination    String
+  status         String
+  createdAt      DateTime        @default(now())
+  incident       Incident        @relation(fields: [incidentId], references: [id])
 }
 
 enum WebsiteStatus {
   Good
   Bad
+}
+
+enum CheckType {
+  HTTP
+  MULTI_STEP
+  KEYWORD
+  DNS
+  TLS
+}
+
+enum AlertSeverity {
+  P1
+  P2
+  P3
+}
+
+enum IntegrationType {
+  WEBHOOK
+  SLACK
+  DISCORD
+  TEAMS
+  PAGERDUTY
+  OPSGENIE
+}
+
+enum IncidentStatus {
+  OPEN
+  RESOLVED
+}
+
+enum IncidentEventType {
+  DETECTED
+  ALERT_SENT
+  ALERT_SUPPRESSED
+  RETRY_ATTEMPT
+  QUORUM_DECISION
+  ACKNOWLEDGED
+  ESCALATED
+  RECOVERY
+  NOTE
 }

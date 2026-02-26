@@ -90,10 +90,74 @@ interface ProcessedWebsite {
   uptimePercentage: number;
   lastChecked: string;
   uptimeTicks: UptimeStatus[];
+  cooldownMinutes: number;
+  retries: number;
+  quorum: number;
+  validatorsPerRound: number;
+  escalationMinutes: number;
+  statusPageSlug?: string | null;
+  statusPagePublic?: boolean;
+  checkType: "HTTP" | "MULTI_STEP" | "KEYWORD" | "DNS" | "TLS";
+  sloTarget: number;
+  teamName: string;
+  incidents: {
+    id: string;
+    status: "OPEN" | "RESOLVED";
+    startedAt: string;
+    acknowledgedAt?: string | null;
+    escalatedAt?: string | null;
+    events: { id: string; type: string; message: string; createdAt: string }[];
+  }[];
+  alertRoutes: {
+    id: string;
+    targetTeam: string;
+    minSeverity: "P1" | "P2" | "P3";
+    channel: "WEBHOOK" | "SLACK" | "DISCORD" | "TEAMS" | "PAGERDUTY" | "OPSGENIE";
+  }[];
+  integrations: {
+    id: string;
+    type: "WEBHOOK" | "SLACK" | "DISCORD" | "TEAMS" | "PAGERDUTY" | "OPSGENIE";
+    endpoint: string;
+    enabled: boolean;
+  }[];
+  onCallSchedules: {
+    id: string;
+    rotationName: string;
+    timezone: string;
+    quietHoursStart?: number | null;
+    quietHoursEnd?: number | null;
+  }[];
 }
 
-function WebsiteCard({ website }: { website: ProcessedWebsite }) {
+interface WebsiteAnalytics {
+  sli: number;
+  sloTarget: number;
+  errorBudgetRemaining: number;
+  latency: { p50: number; p95: number; p99: number };
+  mttaMs: number;
+  mttrMs: number;
+  regionalHeatmap: { region: string; total: number; errorRate: number }[];
+}
+
+function WebsiteCard({
+  website,
+  onAcknowledge,
+  analytics,
+  onLoadAnalytics,
+  onAddIntegration,
+  onAddAlertRoute,
+  onAddOnCall,
+}: {
+  website: ProcessedWebsite;
+  onAcknowledge: (incidentId: string) => Promise<void>;
+  analytics?: WebsiteAnalytics;
+  onLoadAnalytics: (websiteId: string) => Promise<void>;
+  onAddIntegration: (websiteId: string) => Promise<void>;
+  onAddAlertRoute: (websiteId: string) => Promise<void>;
+  onAddOnCall: (websiteId: string) => Promise<void>;
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const openIncident = website.incidents.find((incident) => incident.status === "OPEN");
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:border-cyan-400/30 hover:bg-white/10">
@@ -124,6 +188,105 @@ function WebsiteCard({ website }: { website: ProcessedWebsite }) {
         <div className="mt-4 border-t border-white/10 pt-4">
           <p className="text-xs uppercase tracking-wide text-slate-400">Last 30 minutes status</p>
           <UptimeTicks ticks={website.uptimeTicks} />
+
+          <div className="mt-4 grid gap-2 text-xs text-slate-300 md:grid-cols-2">
+            <p>Cooldown: <span className="font-semibold text-white">{website.cooldownMinutes}m</span></p>
+            <p>Retries: <span className="font-semibold text-white">{website.retries}</span></p>
+            <p>Quorum: <span className="font-semibold text-white">{website.quorum}</span></p>
+            <p>Validators/round: <span className="font-semibold text-white">{website.validatorsPerRound}</span></p>
+            <p>Escalation: <span className="font-semibold text-white">{website.escalationMinutes}m</span></p>
+            <p>Check type: <span className="font-semibold text-white">{website.checkType}</span></p>
+            <p>SLO target: <span className="font-semibold text-white">{website.sloTarget.toFixed(2)}%</span></p>
+            <p>Team: <span className="font-semibold text-white">{website.teamName}</span></p>
+            <p>
+              Status page:{" "}
+              {website.statusPageSlug ? (
+                <a
+                  href={`/status/${website.statusPageSlug}`}
+                  target="_blank"
+                  className="font-semibold text-cyan-300 hover:text-cyan-200"
+                  rel="noreferrer"
+                >
+                  /status/{website.statusPageSlug}
+                </a>
+              ) : (
+                <span className="font-semibold text-slate-500">not configured</span>
+              )}
+            </p>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/60 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Incident timeline</p>
+            {website.incidents.length === 0 ? (
+              <p className="mt-2 text-xs text-slate-500">No incidents recorded yet.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {website.incidents.slice(0, 2).map((incident) => (
+                  <div key={incident.id} className="rounded-lg border border-white/10 bg-slate-950/70 p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`text-xs font-semibold ${incident.status === "OPEN" ? "text-rose-300" : "text-emerald-300"}`}>
+                        {incident.status}
+                      </span>
+                      {incident.status === "OPEN" && !incident.acknowledgedAt ? (
+                        <button
+                          onClick={() => onAcknowledge(incident.id)}
+                          className="rounded-full border border-cyan-400/50 px-3 py-1 text-[11px] font-semibold text-cyan-200 hover:border-cyan-300"
+                        >
+                          Acknowledge
+                        </button>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-400">Started: {new Date(incident.startedAt).toLocaleString()}</p>
+                    <ul className="mt-2 space-y-1 text-[11px] text-slate-300">
+                      {incident.events.slice(0, 3).map((event) => (
+                        <li key={event.id}>• {event.type}: {event.message}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+            {openIncident?.escalatedAt ? (
+              <p className="mt-2 text-xs text-amber-300">Escalated at {new Date(openIncident.escalatedAt).toLocaleTimeString()}</p>
+            ) : null}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/60 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Alerting setup</p>
+              <div className="flex gap-2">
+                <button onClick={() => onAddIntegration(website.id)} className="rounded-full border border-white/20 px-3 py-1 text-[11px] hover:border-cyan-300">Add integration</button>
+                <button onClick={() => onAddAlertRoute(website.id)} className="rounded-full border border-white/20 px-3 py-1 text-[11px] hover:border-cyan-300">Add route</button>
+                <button onClick={() => onAddOnCall(website.id)} className="rounded-full border border-white/20 px-3 py-1 text-[11px] hover:border-cyan-300">Add on-call</button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-slate-300">Routes: {website.alertRoutes.length} • Integrations: {website.integrations.length} • Schedules: {website.onCallSchedules.length}</p>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/60 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Reliability analytics</p>
+              <button onClick={() => onLoadAnalytics(website.id)} className="rounded-full border border-white/20 px-3 py-1 text-[11px] hover:border-cyan-300">Refresh analytics</button>
+            </div>
+            {analytics ? (
+              <div className="mt-3 grid gap-2 text-xs md:grid-cols-2 text-slate-200">
+                <p>SLI/SLO: <span className="font-semibold">{analytics.sli.toFixed(2)}% / {analytics.sloTarget.toFixed(2)}%</span></p>
+                <p>Error budget remaining: <span className="font-semibold">{analytics.errorBudgetRemaining.toFixed(2)}%</span></p>
+                <p>P50/P95/P99: <span className="font-semibold">{analytics.latency.p50.toFixed(0)} / {analytics.latency.p95.toFixed(0)} / {analytics.latency.p99.toFixed(0)} ms</span></p>
+                <p>MTTA / MTTR: <span className="font-semibold">{(analytics.mttaMs / 60000).toFixed(2)} / {(analytics.mttrMs / 60000).toFixed(2)} min</span></p>
+                <div className="md:col-span-2">
+                  <p className="text-slate-400">Regional heatmap</p>
+                  <ul className="mt-1 space-y-1">
+                    {analytics.regionalHeatmap.slice(0, 5).map((region) => (
+                      <li key={region.region}>• {region.region}: {region.errorRate.toFixed(2)}% errors ({region.total} checks)</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">No analytics loaded yet.</p>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -136,6 +299,7 @@ function App() {
   const {websites, refreshWebsites} = useWebsites();
   const { getToken } = useAuth();
   const [mounted, setMounted] = useState(false);
+  const [analyticsByWebsite, setAnalyticsByWebsite] = useState<Record<string, WebsiteAnalytics>>({});
 
   React.useEffect(() => {
     setMounted(true);
@@ -191,6 +355,20 @@ function App() {
         uptimePercentage,
         lastChecked,
         uptimeTicks: windows,
+        cooldownMinutes: website.cooldownMinutes,
+        retries: website.retries,
+        quorum: website.quorum,
+        validatorsPerRound: website.validatorsPerRound,
+        escalationMinutes: website.escalationMinutes,
+        statusPageSlug: website.statusPageSlug,
+        statusPagePublic: website.statusPagePublic,
+        checkType: website.checkType,
+        sloTarget: website.sloTarget,
+        teamName: website.teamName,
+        incidents: website.incidents,
+        alertRoutes: website.alertRoutes,
+        integrations: website.integrations,
+        onCallSchedules: website.onCallSchedules,
       };
     });
   }, [websites]);
@@ -210,6 +388,47 @@ function App() {
   const filteredWebsites = processedWebsites.filter((website) =>
     website.url.toLowerCase().includes(query.toLowerCase())
   );
+
+  const acknowledgeIncident = async (incidentId: string) => {
+    const token = await getToken();
+    const headers = token ? { Authorization: token } : {};
+    await axios.post(`${API_BACKEND_URL}/api/v1/incidents/${incidentId}/ack`, {}, { headers });
+    await refreshWebsites();
+  };
+
+  const loadAnalytics = async (websiteId: string) => {
+    const token = await getToken();
+    const headers = token ? { Authorization: token } : {};
+    const response = await axios.get(`${API_BACKEND_URL}/api/v1/website/${websiteId}/analytics`, { headers });
+    setAnalyticsByWebsite((previous) => ({ ...previous, [websiteId]: response.data.analytics }));
+  };
+
+  const addIntegration = async (websiteId: string) => {
+    const endpoint = window.prompt("Integration endpoint URL");
+    if (!endpoint) return;
+    const token = await getToken();
+    const headers = token ? { Authorization: token } : {};
+    await axios.post(`${API_BACKEND_URL}/api/v1/website/${websiteId}/integrations`, { type: "WEBHOOK", endpoint }, { headers });
+    await refreshWebsites();
+  };
+
+  const addAlertRoute = async (websiteId: string) => {
+    const targetTeam = window.prompt("Route target team", "platform");
+    if (!targetTeam) return;
+    const token = await getToken();
+    const headers = token ? { Authorization: token } : {};
+    await axios.post(`${API_BACKEND_URL}/api/v1/website/${websiteId}/alert-routes`, { targetTeam, minSeverity: "P2", channel: "WEBHOOK" }, { headers });
+    await refreshWebsites();
+  };
+
+  const addOnCall = async (websiteId: string) => {
+    const rotationName = window.prompt("On-call rotation name", "primary");
+    if (!rotationName) return;
+    const token = await getToken();
+    const headers = token ? { Authorization: token } : {};
+    await axios.post(`${API_BACKEND_URL}/api/v1/website/${websiteId}/on-call`, { rotationName, timezone: "UTC", quietHoursStart: 0, quietHoursEnd: 6 }, { headers });
+    await refreshWebsites();
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -270,7 +489,16 @@ function App() {
             </div>
           ) : (
             filteredWebsites.map((website) => (
-              <WebsiteCard key={website.id} website={website} />
+              <WebsiteCard
+                key={website.id}
+                website={website}
+                onAcknowledge={acknowledgeIncident}
+                analytics={analyticsByWebsite[website.id]}
+                onLoadAnalytics={loadAnalytics}
+                onAddIntegration={addIntegration}
+                onAddAlertRoute={addAlertRoute}
+                onAddOnCall={addOnCall}
+              />
             ))
           )}
         </div>
