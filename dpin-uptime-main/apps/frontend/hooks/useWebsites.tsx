@@ -49,7 +49,7 @@ interface Website {
         id: string;
         targetTeam: string;
         minSeverity: "P1" | "P2" | "P3";
-        channel: "WEBHOOK" | "SLACK" | "DISCORD" | "TEAMS" | "PAGERDUTY" | "OPSGENIE";
+        channel: "EMAIL" | "SMS" | "WEBHOOK" | "SLACK" | "DISCORD" | "TEAMS" | "PAGERDUTY" | "OPSGENIE";
     }[];
     onCallSchedules: {
         id: string;
@@ -60,9 +60,24 @@ interface Website {
     }[];
     integrations: {
         id: string;
-        type: "WEBHOOK" | "SLACK" | "DISCORD" | "TEAMS" | "PAGERDUTY" | "OPSGENIE";
+        type: "EMAIL" | "SMS" | "WEBHOOK" | "SLACK" | "DISCORD" | "TEAMS" | "PAGERDUTY" | "OPSGENIE";
         endpoint: string;
         enabled: boolean;
+    }[];
+    components: {
+        id: string;
+        name: string;
+        targetUrl?: string | null;
+        path?: string | null;
+        checkType: "HTTP" | "MULTI_STEP" | "KEYWORD" | "DNS" | "TLS";
+        enabled: boolean;
+        ticks: {
+            id: string;
+            createdAt: string;
+            status: string;
+            latency: number;
+            details?: string | null;
+        }[];
     }[];
 }
 
@@ -74,7 +89,7 @@ export function useWebsites() {
         try {
             const token = await getToken();
             const headers = token ? { Authorization: token } : {};
-            const response = await axios.get(`${API_BACKEND_URL}/api/v1/websites`, {
+            const response = await axios.get(`${API_BACKEND_URL}/api/v1/websites?ticksLimit=60&incidentsLimit=3&eventLimit=10`, {
                 headers,
                 timeout: 10000,
             });

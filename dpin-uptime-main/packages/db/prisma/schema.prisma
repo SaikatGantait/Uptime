@@ -51,6 +51,8 @@ model Website {
   alertRoutes         AlertRoute[]
   onCallSchedules     OnCallSchedule[]
   integrations        IntegrationChannel[]
+  components          WebsiteComponent[]
+  componentTicks      ComponentTick[]
 }
 
 model Validator {
@@ -60,6 +62,40 @@ model Validator {
   ip        String
   pendingPayouts  Int         @default(0)
   ticks     WebsiteTick[]
+  componentTicks ComponentTick[]
+}
+
+model WebsiteComponent {
+  id                String          @id @default(uuid())
+  websiteId         String
+  name              String
+  targetUrl         String?
+  path              String?
+  checkType         CheckType       @default(HTTP)
+  expectedKeyword   String?
+  dnsRecordType     String?
+  dnsExpectedValue  String?
+  tlsWarningDaysCsv String?
+  multiStepConfig   String?
+  enabled           Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  website           Website         @relation(fields: [websiteId], references: [id])
+  ticks             ComponentTick[]
+}
+
+model ComponentTick {
+  id           String         @id @default(uuid())
+  websiteId    String
+  componentId  String
+  validatorId  String
+  createdAt    DateTime
+  status       WebsiteStatus
+  latency      Float
+  severity     AlertSeverity  @default(P3)
+  details      String?
+  website      Website        @relation(fields: [websiteId], references: [id])
+  component    WebsiteComponent @relation(fields: [componentId], references: [id])
+  validator    Validator      @relation(fields: [validatorId], references: [id])
 }
 
 model WebsiteTick {

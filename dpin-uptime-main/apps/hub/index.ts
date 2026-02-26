@@ -160,6 +160,15 @@ function retryDelayMs(attempts: number) {
   return Math.min(base * Math.pow(2, Math.max(0, attempts - 1)), 30 * 60 * 1000);
 }
 
+function resolveComponentUrl(baseUrl: string, component: { targetUrl: string | null; path: string | null }) {
+  if (component.targetUrl && component.targetUrl.trim()) {
+    return new URL(component.targetUrl.trim()).toString();
+  }
+
+  const path = component.path && component.path.trim() ? component.path.trim() : "/";
+  return new URL(path, baseUrl).toString();
+}
+
 function buildPayload(args: {
   kind: NotificationKind;
   websiteUrl: string;
@@ -680,6 +689,13 @@ async function runMonitoringRound() {
       .sort(() => Math.random() - 0.5)
       .slice(0, validatorsPerRound);
 
+    const components = await prismaClient.websiteComponent.findMany({
+      where: {
+        websiteId: website.id,
+        enabled: true,
+      },
+    });
+
     const responses = await Promise.all(
       validatorsForWebsite.map((validator) =>
         requestValidation(validator, {
@@ -779,6 +795,63 @@ async function runMonitoringRound() {
         ? NORMAL_RECHECK_SECONDS
         : STABLE_RECHECK_SECONDS;
     websiteNextRun.set(website.id, Date.now() + nextDelaySeconds * 1000);
+
+    for (const component of components) {
+      let componentUrl: string;
+      try {
+        componentUrl = resolveComponentUrl(website.url, component);
+      } catch {
+        continue;
+      }
+
+      const componentResponses = await Promise.all(
+        validatorsForWebsite.map((validator) =>
+          requestValidation(validator, {
+            websiteId: website.id,
+            url: componentUrl,
+            retries: website.retries,
+            checkType: component.checkType,
+            expectedKeyword: component.expectedKeyword,
+            dnsRecordType: component.dnsRecordType,
+            dnsExpectedValue: component.dnsExpectedValue,
+            tlsWarningDaysCsv: component.tlsWarningDaysCsv,
+            multiStepConfig: component.multiStepConfig,
+          }),
+        ),
+      );
+
+      const validComponentResponses = componentResponses.filter(
+        (response): response is NonNullable<typeof response> => !!response,
+      );
+
+      if (validComponentResponses.length === 0) {
+        continue;
+      }
+
+      await prismaClient.$transaction(async (tx) => {
+        for (const response of validComponentResponses) {
+          await tx.componentTick.create({
+            data: {
+              websiteId: website.id,
+              componentId: component.id,
+              validatorId: response.validatorId,
+              status: response.status,
+              latency: response.latency,
+              severity: response.severity,
+              details: response.details,
+              createdAt: new Date(),
+            },
+          });
+
+          await tx.validator.update({
+            where: { id: response.validatorId },
+            data: {
+              pendingPayouts: { increment: COST_PER_VALIDATION },
+            },
+          });
+        }
+      });
+    }
   }
 }
 

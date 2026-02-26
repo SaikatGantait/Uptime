@@ -12,6 +12,10 @@ import { Transaction, SystemProgram, Connection, Keypair, PublicKey } from "@sol
 
 const connection = new Connection("https://api.mainnet-beta.solana.com");
 const app = express();
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || "256kb";
+const RATE_LIMIT_WINDOW_MS = Number(process.env.API_RATE_LIMIT_WINDOW_MS || 60_000);
+const RATE_LIMIT_MAX_REQUESTS = Number(process.env.API_RATE_LIMIT_MAX_REQUESTS || 300);
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 function isValidEmail(value: string) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -29,11 +33,73 @@ function slugify(value: string) {
         .slice(0, 40);
 }
 
+function normalizeMonitorUrl(baseUrl: string, targetUrl?: string | null, path?: string | null) {
+    if (typeof targetUrl === "string" && targetUrl.trim()) {
+        return new URL(targetUrl.trim()).toString();
+    }
+
+    const normalizedPath = typeof path === "string" && path.trim() ? path.trim() : "/";
+    return new URL(normalizedPath, baseUrl).toString();
+}
+
+function parseBoundedInt(value: unknown, fallback: number, min: number, max: number) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
+function readClientIp(req: express.Request) {
+    const raw = req.headers["x-forwarded-for"];
+    if (typeof raw === "string" && raw.trim()) {
+        return raw.split(",")[0]!.trim();
+    }
+    return req.ip || "unknown";
+}
+
 app.use(cors({
     origin: '*',
     credentials: true
 }));
-app.use(express.json());
+app.set("trust proxy", true);
+app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
+
+app.get("/api/v1/health", async (_req, res) => {
+    try {
+        await prismaClient.$queryRaw`SELECT 1`;
+        return res.json({
+            ok: true,
+            uptimeSec: Math.round(process.uptime()),
+            now: new Date().toISOString(),
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown db error";
+        return res.status(503).json({ ok: false, error: message });
+    }
+});
+
+app.use((req, res, next) => {
+    if (!req.path.startsWith("/api/")) {
+        return next();
+    }
+
+    const ip = readClientIp(req);
+    const now = Date.now();
+    const existing = rateLimitStore.get(ip);
+
+    if (!existing || existing.resetAt <= now) {
+        rateLimitStore.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+        return next();
+    }
+
+    existing.count += 1;
+    if (existing.count > RATE_LIMIT_MAX_REQUESTS) {
+        const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+        res.setHeader("Retry-After", retryAfterSeconds.toString());
+        return res.status(429).json({ error: "Too many requests. Please retry shortly." });
+    }
+
+    return next();
+});
 
 app.post("/api/v1/website", authMiddleware, async (req, res) => {
     const userId = req.userId!;
@@ -83,6 +149,9 @@ app.post("/api/v1/website", authMiddleware, async (req, res) => {
 app.get("/api/v1/website/status", authMiddleware, async (req, res) => {
     const websiteId = req.query.websiteId! as unknown as string;
     const userId = req.userId;
+    const ticksLimit = parseBoundedInt(req.query.ticksLimit, 120, 10, 500);
+    const incidentsLimit = parseBoundedInt(req.query.incidentsLimit, 10, 1, 50);
+    const eventLimit = parseBoundedInt(req.query.eventLimit, 50, 1, 200);
 
     const data = await prismaClient.website.findFirst({
         where: {
@@ -91,16 +160,29 @@ app.get("/api/v1/website/status", authMiddleware, async (req, res) => {
             disabled: false
         },
         include: {
-            ticks: true,
+            ticks: {
+                orderBy: { createdAt: "desc" },
+                take: ticksLimit,
+            },
+            components: {
+                where: { enabled: true },
+                include: {
+                    ticks: {
+                        orderBy: { createdAt: "desc" },
+                        take: 30,
+                    },
+                },
+                orderBy: { createdAt: "asc" },
+            },
             incidents: {
                 include: {
                     events: {
                         orderBy: { createdAt: "desc" },
-                        take: 50,
+                        take: eventLimit,
                     },
                 },
                 orderBy: { startedAt: "desc" },
-                take: 10,
+                take: incidentsLimit,
             },
         }
     })
@@ -111,6 +193,9 @@ app.get("/api/v1/website/status", authMiddleware, async (req, res) => {
 
 app.get("/api/v1/websites", authMiddleware, async (req, res) => {
     const userId = req.userId!;
+    const ticksLimit = parseBoundedInt(req.query.ticksLimit, 60, 10, 240);
+    const incidentsLimit = parseBoundedInt(req.query.incidentsLimit, 3, 1, 20);
+    const eventLimit = parseBoundedInt(req.query.eventLimit, 10, 1, 100);
 
     const websites = await prismaClient.website.findMany({
         where: {
@@ -120,17 +205,17 @@ app.get("/api/v1/websites", authMiddleware, async (req, res) => {
         include: {
             ticks: {
                 orderBy: { createdAt: "desc" },
-                take: 120,
+                take: ticksLimit,
             },
             incidents: {
                 include: {
                     events: {
                         orderBy: { createdAt: "desc" },
-                        take: 20,
+                        take: eventLimit,
                     },
                 },
                 orderBy: { startedAt: "desc" },
-                take: 5,
+                take: incidentsLimit,
             },
             alertRoutes: true,
             onCallSchedules: true,
@@ -138,6 +223,16 @@ app.get("/api/v1/websites", authMiddleware, async (req, res) => {
                 where: {
                     enabled: true,
                 },
+            },
+            components: {
+                where: { enabled: true },
+                include: {
+                    ticks: {
+                        orderBy: { createdAt: "desc" },
+                        take: 30,
+                    },
+                },
+                orderBy: { createdAt: "asc" },
             },
         }
     })
@@ -363,6 +458,134 @@ app.post("/api/v1/website/:websiteId/test-alert", authMiddleware, async (req, re
         queued: integrations.length,
         channels: integrations.map((integration) => integration.type),
     });
+});
+
+app.get("/api/v1/website/:websiteId/alert-deliveries", authMiddleware, async (req, res) => {
+    const userId = req.userId!;
+    const websiteId = req.params.websiteId;
+    const limit = parseBoundedInt(req.query.limit, 30, 1, 200);
+
+    const website = await prismaClient.website.findFirst({
+        where: { id: websiteId, userId, disabled: false },
+    });
+
+    if (!website) {
+        return res.status(404).json({ error: "website not found" });
+    }
+
+    const deliveries = await prismaClient.alertDelivery.findMany({
+        where: {
+            incident: {
+                websiteId,
+            },
+        },
+        include: {
+            incident: {
+                select: {
+                    id: true,
+                    status: true,
+                    severity: true,
+                    startedAt: true,
+                    summary: true,
+                },
+            },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+    });
+
+    return res.json({ deliveries });
+});
+
+app.post("/api/v1/alert-delivery/:deliveryId/retry", authMiddleware, async (req, res) => {
+    const userId = req.userId!;
+    const deliveryId = req.params.deliveryId;
+
+    const delivery = await prismaClient.alertDelivery.findFirst({
+        where: {
+            id: deliveryId,
+            incident: {
+                website: {
+                    userId,
+                    disabled: false,
+                },
+            },
+        },
+    });
+
+    if (!delivery) {
+        return res.status(404).json({ error: "delivery not found" });
+    }
+
+    if (delivery.status === "sent") {
+        return res.status(400).json({ error: "delivery already sent" });
+    }
+
+    const updated = await prismaClient.alertDelivery.update({
+        where: { id: delivery.id },
+        data: {
+            status: "queued",
+            nextRetryAt: new Date(),
+            lastError: null,
+        },
+    });
+
+    return res.json({ delivery: updated });
+});
+
+app.post("/api/v1/website/:websiteId/components", authMiddleware, async (req, res) => {
+    const userId = req.userId!;
+    const websiteId = req.params.websiteId;
+    const {
+        name,
+        targetUrl,
+        path,
+        checkType = "HTTP",
+        expectedKeyword,
+        dnsRecordType,
+        dnsExpectedValue,
+        tlsWarningDaysCsv,
+        multiStepConfig,
+    } = req.body ?? {};
+
+    const website = await prismaClient.website.findFirst({ where: { id: websiteId, userId, disabled: false } });
+    if (!website) {
+        return res.status(404).json({ error: "website not found" });
+    }
+
+    if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "component name is required" });
+    }
+
+    try {
+        normalizeMonitorUrl(website.url, typeof targetUrl === "string" ? targetUrl : null, typeof path === "string" ? path : null);
+    } catch {
+        return res.status(400).json({ error: "targetUrl/path must resolve to a valid URL" });
+    }
+
+    const allowedCheckTypes = ["HTTP", "MULTI_STEP", "KEYWORD", "DNS", "TLS"];
+    const normalizedCheckType = typeof checkType === "string" ? checkType.toUpperCase() : "HTTP";
+    if (!allowedCheckTypes.includes(normalizedCheckType)) {
+        return res.status(400).json({ error: "invalid checkType" });
+    }
+
+    const component = await prismaClient.websiteComponent.create({
+        data: {
+            websiteId,
+            name: name.trim(),
+            targetUrl: typeof targetUrl === "string" && targetUrl.trim() ? targetUrl.trim() : null,
+            path: typeof path === "string" && path.trim() ? path.trim() : null,
+            checkType: normalizedCheckType,
+            expectedKeyword: typeof expectedKeyword === "string" ? expectedKeyword : null,
+            dnsRecordType: typeof dnsRecordType === "string" ? dnsRecordType : null,
+            dnsExpectedValue: typeof dnsExpectedValue === "string" ? dnsExpectedValue : null,
+            tlsWarningDaysCsv: typeof tlsWarningDaysCsv === "string" ? tlsWarningDaysCsv : null,
+            multiStepConfig: typeof multiStepConfig === "string" ? multiStepConfig : null,
+            enabled: true,
+        },
+    });
+
+    return res.json({ component });
 });
 
 app.get("/api/v1/website/:websiteId/analytics", authMiddleware, async (req, res) => {
@@ -707,6 +930,9 @@ app.get("/api/v1/incidents/:incidentId/postmortem-template", authMiddleware, asy
 
 app.get("/api/v1/status/:slug", async (req, res) => {
     const slug = req.params.slug;
+    const ticksLimit = parseBoundedInt(req.query.ticksLimit, 60, 10, 240);
+    const incidentsLimit = parseBoundedInt(req.query.incidentsLimit, 10, 1, 50);
+    const eventLimit = parseBoundedInt(req.query.eventLimit, 50, 1, 200);
 
     const website = await prismaClient.website.findFirst({
         where: {
@@ -716,17 +942,17 @@ app.get("/api/v1/status/:slug", async (req, res) => {
         include: {
             ticks: {
                 orderBy: { createdAt: "desc" },
-                take: 120,
+                take: ticksLimit,
             },
             incidents: {
                 include: {
                     events: {
                         orderBy: { createdAt: "desc" },
-                        take: 100,
+                        take: eventLimit,
                     },
                 },
                 orderBy: { startedAt: "desc" },
-                take: 20,
+                take: incidentsLimit,
             },
         },
     });
@@ -740,6 +966,7 @@ app.get("/api/v1/status/:slug", async (req, res) => {
     }
 
     const currentTick = website.ticks[0];
+    res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
     return res.json({
         statusPage: {
             title: website.statusPageTitle,

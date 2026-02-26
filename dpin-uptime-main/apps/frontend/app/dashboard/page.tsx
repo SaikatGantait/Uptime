@@ -132,6 +132,20 @@ interface ProcessedWebsite {
     quietHoursStart?: number | null;
     quietHoursEnd?: number | null;
   }[];
+  components: {
+    id: string;
+    name: string;
+    checkType: "HTTP" | "MULTI_STEP" | "KEYWORD" | "DNS" | "TLS";
+    path?: string | null;
+    targetUrl?: string | null;
+    ticks: {
+      id: string;
+      createdAt: string;
+      status: string;
+      latency: number;
+      details?: string | null;
+    }[];
+  }[];
 }
 
 interface WebsiteAnalytics {
@@ -142,6 +156,20 @@ interface WebsiteAnalytics {
   mttaMs: number;
   mttrMs: number;
   regionalHeatmap: { region: string; total: number; errorRate: number }[];
+}
+
+interface AlertDeliveryRow {
+  id: string;
+  channelType: string;
+  destination: string;
+  status: string;
+  notificationKind: string;
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAt: string;
+  sentAt?: string | null;
+  lastError?: string | null;
+  createdAt: string;
 }
 
 function AdvancedLiveGraph({
@@ -628,22 +656,32 @@ function StatPill({ label, value, tone = "neutral" }: { label: string; value: st
 function WebsiteCard({
   website,
   onAcknowledge,
+  onDeleteWebsite,
   analytics,
   onLoadAnalytics,
   onAddIntegration,
   onAddAlertRoute,
   onSendTestAlert,
   onAddOnCall,
+  deliveries,
+  onLoadDeliveries,
+  onRetryDelivery,
+  onAddComponent,
   onToggleStatusPageVisibility,
 }: {
   website: ProcessedWebsite;
   onAcknowledge: (incidentId: string) => Promise<void>;
+  onDeleteWebsite: (websiteId: string) => Promise<void>;
   analytics?: WebsiteAnalytics;
   onLoadAnalytics: (websiteId: string) => Promise<void>;
   onAddIntegration: (websiteId: string) => Promise<void>;
   onAddAlertRoute: (websiteId: string) => Promise<void>;
   onSendTestAlert: (websiteId: string) => Promise<void>;
   onAddOnCall: (websiteId: string) => Promise<void>;
+  deliveries: AlertDeliveryRow[];
+  onLoadDeliveries: (websiteId: string) => Promise<void>;
+  onRetryDelivery: (deliveryId: string, websiteId: string) => Promise<void>;
+  onAddComponent: (websiteId: string) => Promise<void>;
   onToggleStatusPageVisibility: (websiteId: string, makePublic: boolean) => Promise<void>;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -651,9 +689,17 @@ function WebsiteCard({
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:border-cyan-400/30 hover:bg-white/10">
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         className="flex w-full items-center justify-between text-left"
         onClick={() => setIsExpanded(!isExpanded)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setIsExpanded((previous) => !previous);
+          }
+        }}
       >
         <div className="flex items-center gap-4">
           <StatusCircle status={website.status} />
@@ -663,6 +709,15 @@ function WebsiteCard({
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              void onDeleteWebsite(website.id);
+            }}
+            className="rounded-full border border-rose-400/40 px-3 py-1 text-[11px] font-semibold text-rose-200 hover:border-rose-300"
+          >
+            Remove
+          </button>
           <span className="rounded-full border border-white/10 bg-slate-900/60 px-3 py-1 text-xs text-slate-200">
             {website.uptimePercentage.toFixed(1)}% uptime
           </span>
@@ -672,7 +727,7 @@ function WebsiteCard({
             <ChevronDown className="h-4 w-4 text-slate-400" />
           )}
         </div>
-      </button>
+      </div>
 
       {isExpanded && (
         <div className="mt-4 border-t border-white/10 pt-4">
@@ -780,6 +835,69 @@ function WebsiteCard({
           </div>
 
           <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/60 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Component-based monitoring</p>
+              <button onClick={() => onAddComponent(website.id)} className="rounded-full border border-white/20 px-3 py-1 text-[11px] hover:border-cyan-300">Add component</button>
+            </div>
+            {website.components.length === 0 ? (
+              <p className="mt-2 text-xs text-slate-500">No components configured yet.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {website.components.map((component) => {
+                  const latestTick = component.ticks[0];
+                  const isGood = latestTick?.status === "Good";
+                  return (
+                    <div key={component.id} className="rounded-md border border-white/10 bg-slate-950/70 p-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-white">{component.name}</span>
+                        <span className={isGood ? "text-emerald-300" : latestTick ? "text-rose-300" : "text-slate-400"}>
+                          {latestTick ? latestTick.status : "Unknown"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-slate-400">{component.targetUrl ?? component.path ?? "/"} • {component.checkType}</p>
+                      {latestTick ? (
+                        <p className="mt-1 text-slate-300">Latency {latestTick.latency.toFixed(0)} ms • {new Date(latestTick.createdAt).toLocaleTimeString()}</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/60 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Alert delivery center</p>
+              <button onClick={() => onLoadDeliveries(website.id)} className="rounded-full border border-white/20 px-3 py-1 text-[11px] hover:border-cyan-300">Refresh deliveries</button>
+            </div>
+            {deliveries.length === 0 ? (
+              <p className="mt-2 text-xs text-slate-500">No deliveries yet. Send a test alert to populate this list.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {deliveries.slice(0, 8).map((delivery) => (
+                  <div key={delivery.id} className="rounded-md border border-white/10 bg-slate-950/70 p-2 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-white">{delivery.notificationKind} • {delivery.channelType}</span>
+                      <span className={delivery.status === "sent" ? "text-emerald-300" : delivery.status === "failed" ? "text-rose-300" : "text-amber-300"}>{delivery.status}</span>
+                    </div>
+                    <p className="mt-1 text-slate-300">{delivery.destination}</p>
+                    <p className="mt-1 text-slate-400">Attempts {delivery.attempts}/{delivery.maxAttempts} • {new Date(delivery.createdAt).toLocaleString()}</p>
+                    {delivery.lastError ? <p className="mt-1 text-rose-300">{delivery.lastError}</p> : null}
+                    {delivery.status !== "sent" ? (
+                      <button
+                        onClick={() => onRetryDelivery(delivery.id, website.id)}
+                        className="mt-2 rounded-full border border-amber-300/40 px-3 py-1 text-[11px] text-amber-200 hover:border-amber-300"
+                      >
+                        Retry now
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/60 p-3">
             <div className="flex items-center justify-between">
               <p className="text-xs uppercase tracking-wide text-slate-400">Reliability analytics</p>
               <button onClick={() => onLoadAnalytics(website.id)} className="rounded-full border border-white/20 px-3 py-1 text-[11px] hover:border-cyan-300">Refresh analytics</button>
@@ -816,6 +934,7 @@ function App() {
   const { getToken } = useAuth();
   const [mounted, setMounted] = useState(false);
   const [analyticsByWebsite, setAnalyticsByWebsite] = useState<Record<string, WebsiteAnalytics>>({});
+  const [deliveriesByWebsite, setDeliveriesByWebsite] = useState<Record<string, AlertDeliveryRow[]>>({});
 
   React.useEffect(() => {
     setMounted(true);
@@ -916,6 +1035,7 @@ function App() {
         alertRoutes: website.alertRoutes,
         integrations: website.integrations,
         onCallSchedules: website.onCallSchedules,
+        components: website.components,
       };
     });
   }, [websites]);
@@ -941,6 +1061,25 @@ function App() {
     const headers = token ? { Authorization: token } : {};
     await axios.post(`${API_BACKEND_URL}/api/v1/incidents/${incidentId}/ack`, {}, { headers });
     await refreshWebsites();
+  };
+
+  const deleteWebsite = async (websiteId: string) => {
+    const shouldDelete = window.confirm("Remove this monitor URL? This will disable it from active monitoring.");
+    if (!shouldDelete) return;
+
+    const token = await getToken();
+    const headers = token ? { Authorization: token } : {};
+
+    try {
+      await axios.delete(`${API_BACKEND_URL}/api/v1/website/`, {
+        headers,
+        data: { websiteId },
+      });
+      await refreshWebsites();
+      window.alert("Monitor removed successfully.");
+    } catch (error) {
+      window.alert(`Failed to remove monitor: ${parseApiError(error)}`);
+    }
   };
 
   const loadAnalytics = async (websiteId: string) => {
@@ -1056,9 +1195,64 @@ function App() {
 
       const queued = response.data?.queued ?? 0;
       window.alert(`Test alert queued for ${queued} integration(s). It will be delivered by the hub loop shortly.`);
+      await loadDeliveries(websiteId);
       await refreshWebsites();
     } catch (error) {
       window.alert(`Failed to queue test alert: ${parseApiError(error)}`);
+    }
+  };
+
+  const loadDeliveries = async (websiteId: string) => {
+    const token = await getToken();
+    const headers = token ? { Authorization: token } : {};
+    try {
+      const response = await axios.get(`${API_BACKEND_URL}/api/v1/website/${websiteId}/alert-deliveries?limit=30`, { headers });
+      setDeliveriesByWebsite((previous) => ({ ...previous, [websiteId]: response.data.deliveries ?? [] }));
+    } catch (error) {
+      window.alert(`Failed to load deliveries: ${parseApiError(error)}`);
+    }
+  };
+
+  const retryDelivery = async (deliveryId: string, websiteId: string) => {
+    const token = await getToken();
+    const headers = token ? { Authorization: token } : {};
+    try {
+      await axios.post(`${API_BACKEND_URL}/api/v1/alert-delivery/${deliveryId}/retry`, {}, { headers });
+      await loadDeliveries(websiteId);
+    } catch (error) {
+      window.alert(`Failed to retry delivery: ${parseApiError(error)}`);
+    }
+  };
+
+  const addComponent = async (websiteId: string) => {
+    const name = window.prompt("Component name", "API");
+    if (!name) return;
+
+    const path = window.prompt("Path (e.g. /api/health) or leave blank for /", "/");
+    const checkTypeInput = window.prompt("Check type: HTTP, KEYWORD, DNS, TLS, or MULTI_STEP", "HTTP");
+    if (!checkTypeInput) return;
+    const checkType = checkTypeInput.trim().toUpperCase();
+
+    if (!["HTTP", "KEYWORD", "DNS", "TLS", "MULTI_STEP"].includes(checkType)) {
+      window.alert("Invalid check type.");
+      return;
+    }
+
+    const token = await getToken();
+    const headers = token ? { Authorization: token } : {};
+    try {
+      await axios.post(
+        `${API_BACKEND_URL}/api/v1/website/${websiteId}/components`,
+        {
+          name,
+          path: path || "/",
+          checkType,
+        },
+        { headers }
+      );
+      await refreshWebsites();
+    } catch (error) {
+      window.alert(`Failed to add component: ${parseApiError(error)}`);
     }
   };
 
@@ -1136,12 +1330,17 @@ function App() {
                 key={website.id}
                 website={website}
                 onAcknowledge={acknowledgeIncident}
+                onDeleteWebsite={deleteWebsite}
                 analytics={analyticsByWebsite[website.id]}
                 onLoadAnalytics={loadAnalytics}
                 onAddIntegration={addIntegration}
                 onAddAlertRoute={addAlertRoute}
                 onSendTestAlert={sendTestAlert}
                 onAddOnCall={addOnCall}
+                deliveries={deliveriesByWebsite[website.id] ?? []}
+                onLoadDeliveries={loadDeliveries}
+                onRetryDelivery={retryDelivery}
+                onAddComponent={addComponent}
                 onToggleStatusPageVisibility={toggleStatusPageVisibility}
               />
             ))
