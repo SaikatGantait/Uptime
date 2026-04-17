@@ -6,36 +6,41 @@ This guide will get your uptime monitoring platform running locally in under 5 m
 
 - [Bun](https://bun.sh) 1.2.2+ installed
 - [Node.js](https://nodejs.org) 18+ installed
-- [PostgreSQL](https://www.postgresql.org/) running locally
 
-## Step 1: Install Dependencies
+> **Note:** The default database is SQLite — no extra database setup needed.
+> To use PostgreSQL instead, update `DATABASE_URL` in `.env` and the `provider` in `packages/db/prisma/schema.prisma`.
+
+## Step 1: Quick Setup (recommended)
+
+This single command installs dependencies, creates your `.env`, and sets up the database:
+
+```bash
+cd dpin-uptime-main
+bun run setup
+```
+
+That's equivalent to running the manual steps below.
+
+## Step 1 (manual): Install Dependencies
 
 ```bash
 cd dpin-uptime-main
 bun install
 ```
 
-## Step 2: Set Up Database
-
-1. Create a PostgreSQL database:
+## Step 2 (manual): Create Environment File
 
 ```bash
-createdb uptime
+cp .env.example .env
 ```
 
-2. The `.env` file is already created with default settings. Update if needed:
+The defaults work out of the box for local development. Edit `.env` if you need to change ports, enable Clerk auth, or add alert integrations.
+
+## Step 3 (manual): Set Up Database
 
 ```bash
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/uptime"
-```
-
-3. Run migrations:
-
-```bash
-cd packages/db
-npx prisma migrate dev
-npx prisma generate
-cd ../..
+npx prisma generate --schema ./packages/db/prisma/schema.prisma
+npx prisma migrate deploy --schema ./packages/db/prisma/schema.prisma
 ```
 
 ## Step 3: Start the Services
@@ -57,16 +62,17 @@ bun run dev
 ### Terminal 3: Validator
 ```bash
 cd apps/validator
-cp .env.example .env
-# Edit .env and add a valid PRIVATE_KEY (Solana keypair)
 bun run dev
 ```
+> The validator reads `PRIVATE_KEY` from the root `.env`. To override per-validator, copy `apps/validator/.env.example` to `apps/validator/.env`.
 
 ### Terminal 4: Frontend (port 3000)
 ```bash
 cd apps/frontend
 bun run dev
 ```
+
+> **Tip:** Or just run `bun run dev` from the project root — Turborepo starts all four services at once.
 
 ## Step 4: Use the Dashboard
 
@@ -99,7 +105,7 @@ Make sure `PAYER_PRIVATE_KEY` in `.env` has sufficient SOL balance.
 ## Troubleshooting
 
 **Q: Build fails with Prisma errors**  
-A: Run `cd packages/db && npx prisma generate`
+A: Run `npx prisma generate --schema ./packages/db/prisma/schema.prisma`
 
 **Q: Validator can't connect**  
 A: Ensure the hub is running on port 8081

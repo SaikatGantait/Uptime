@@ -13,29 +13,38 @@ A distributed uptime monitoring platform built with TurboRepo.
 
 ## Getting Started
 
-### 1. Install dependencies
+### Quick Setup
+
+```bash
+bun run setup
+```
+
+This copies `.env.example` → `.env`, installs dependencies, and runs database migrations.
+
+### Manual Setup
+
+#### 1. Install dependencies
 
 ```bash
 bun install
 ```
 
-### 2. Set up database
-
-Create a PostgreSQL database, then update the `.env` file:
+#### 2. Create environment file
 
 ```bash
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/uptime"
+cp .env.example .env
 ```
 
-### 3. Run database migrations
+The defaults use SQLite and work out of the box. See `.env.example` for all available options.
+
+#### 3. Run database migrations
 
 ```bash
-cd packages/db
-npx prisma migrate dev
-npx prisma generate
+npx prisma generate --schema ./packages/db/prisma/schema.prisma
+npx prisma migrate deploy --schema ./packages/db/prisma/schema.prisma
 ```
 
-### 4. Start the services
+#### 4. Start the services
 
 **API Server** (port 5050)
 ```bash
@@ -52,8 +61,6 @@ bun run dev
 **Validator** (connect to hub)
 ```bash
 cd apps/validator
-cp .env.example .env
-# Add your Solana keypair to PRIVATE_KEY in .env
 bun run dev
 ```
 
@@ -69,11 +76,12 @@ Open [http://localhost:3000/dashboard](http://localhost:3000/dashboard) and add 
 
 ## Environment Variables
 
-See `.env` for required configuration. Key variables:
+See `.env.example` for the full list with documentation. Key variables:
 
-- `DATABASE_URL` - PostgreSQL connection string
+- `DATABASE_URL` - SQLite (default) or PostgreSQL connection string
 - `DISABLE_AUTH` - Set to `true` for local dev (bypasses JWT auth)
 - `DEMO_USER_ID` - User ID when auth is disabled
+- `NEXT_PUBLIC_API_URL` - API URL for the frontend
 - `PAYER_PRIVATE_KEY` - Solana keypair for validator payouts
 
 ## Development

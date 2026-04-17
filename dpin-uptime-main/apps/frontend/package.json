@@ -15,6 +15,7 @@
     "axios": "^1.8.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^17.3.1",
     "lightningcss": "1.29.2",
     "lucide-react": "^0.479.0",
     "next": "15.5.12",

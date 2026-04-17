@@ -2,6 +2,9 @@
   "name": "dpin-uptime",
   "private": true,
   "scripts": {
+    "setup": "bun run setup:env && bun install && bun run setup:db",
+    "setup:env": "node -e \"const fs=require('fs'); if(!fs.existsSync('.env')){fs.copyFileSync('.env.example','.env');console.log('Created .env from .env.example')}else{console.log('.env already exists, skipping')}\"",
+    "setup:db": "bun x prisma generate --schema ./packages/db/prisma/schema.prisma && bun x prisma migrate deploy --schema ./packages/db/prisma/schema.prisma",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
